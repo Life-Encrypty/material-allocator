@@ -49,6 +49,7 @@ export interface ProjectRequirement {
   item_code: string;
   required_qty: number;
   withdrawn_qty: number;
+  excluded?: boolean;
   notes?: string;
   created_at: string;
   updated_at: string;

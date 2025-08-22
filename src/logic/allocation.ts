@@ -20,9 +20,12 @@ export function allocateAll({ projects, inventory, requirements }: AllocationInp
     inventoryMap.set(row.item_code, current + row.current_balance);
   });
   
-  // Group requirements by item_code
+  // Filter out excluded requirements for allocation calculation
+  const nonExcludedRequirements = requirements.filter(req => !req.excluded);
+  
+  // Group non-excluded requirements by item_code
   const itemGroups = new Map<string, ProjectRequirement[]>();
-  requirements.forEach(req => {
+  nonExcludedRequirements.forEach(req => {
     const existing = itemGroups.get(req.item_code) || [];
     existing.push(req);
     itemGroups.set(req.item_code, existing);
@@ -30,13 +33,13 @@ export function allocateAll({ projects, inventory, requirements }: AllocationInp
   
   // Process each item_code group
   itemGroups.forEach((itemRequirements, itemCode) => {
-    // Sort projects by priority desc, then project_id asc
+    // Sort projects by priority (0 = highest priority), then project_id asc
     const sortedRequirements = itemRequirements.sort((a, b) => {
-      const priorityA = projectPriorityMap.get(a.project_id) || 0;
-      const priorityB = projectPriorityMap.get(b.project_id) || 0;
+      const priorityA = projectPriorityMap.get(a.project_id) ?? 999;
+      const priorityB = projectPriorityMap.get(b.project_id) ?? 999;
       
       if (priorityA !== priorityB) {
-        return priorityB - priorityA; // Higher priority first
+        return priorityA - priorityB; // Lower number = higher priority (0 is highest)
       }
       
       return a.project_id.localeCompare(b.project_id); // Then by project_id asc
@@ -47,7 +50,7 @@ export function allocateAll({ projects, inventory, requirements }: AllocationInp
     
     // Distribute available balance to projects in priority order
     sortedRequirements.forEach(req => {
-      const priority = projectPriorityMap.get(req.project_id) || 0;
+      const priority = projectPriorityMap.get(req.project_id) ?? 999;
       const netRequired = Math.max(0, req.required_qty - req.withdrawn_qty);
       
       // Allocate what we can from available balance
@@ -66,6 +69,21 @@ export function allocateAll({ projects, inventory, requirements }: AllocationInp
         missing_qty: missing,
         priority
       });
+    });
+  });
+  
+  // Add excluded requirements with zero allocatable/missing quantities
+  const excludedRequirements = requirements.filter(req => req.excluded);
+  excludedRequirements.forEach(req => {
+    const priority = projectPriorityMap.get(req.project_id) ?? 999;
+    result.push({
+      project_id: req.project_id,
+      item_code: req.item_code,
+      required_qty: req.required_qty,
+      withdrawn_qty: req.withdrawn_qty,
+      allocatable_qty: 0,
+      missing_qty: 0,
+      priority
     });
   });
   

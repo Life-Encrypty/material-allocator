@@ -5,10 +5,12 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Combobox } from '@/components/ui/combobox';
 import { ArrowLeft, Plus, Trash2, Filter } from 'lucide-react';
 import { FakeApi } from '@/api/FakeApi';
 import { toast } from 'sonner';
-import type { Project, ProjectRequirement, Material, ProjectItemComputed } from '@/domain/types';
+import type { Project, ProjectRequirement, Material, ProjectItemComputed, InventoryRow } from '@/domain/types';
 
 const ProjectDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +19,7 @@ const ProjectDetail = () => {
   const [requirements, setRequirements] = useState<ProjectRequirement[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [computedData, setComputedData] = useState<ProjectItemComputed[]>([]);
+  const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [showMissingOnly, setShowMissingOnly] = useState(false);
   const [editingCell, setEditingCell] = useState<string | null>(null);
 
@@ -44,6 +47,9 @@ const ProjectDetail = () => {
     
     const mats = FakeApi.listMaterials();
     setMaterials(mats);
+    
+    const inv = FakeApi.getCurrentInventory();
+    setInventory(inv);
     
     const computed = FakeApi.getComputedPerProject().filter(c => c.project_id === id);
     setComputedData(computed);
@@ -78,6 +84,7 @@ const ProjectDetail = () => {
       item_code: '',
       required_qty: 0,
       withdrawn_qty: 0,
+      excluded: false,
       notes: '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -99,6 +106,26 @@ const ProjectDetail = () => {
   const filteredRequirements = showMissingOnly 
     ? requirements.filter(req => getComputedValues(req.item_code).missing_qty > 0)
     : requirements;
+
+  const getInventoryOptions = () => {
+    const uniqueItems = new Map<string, string>();
+    
+    // Add items from current inventory
+    inventory.forEach(row => {
+      const material = materials.find(m => m.item_code === row.item_code);
+      const label = material ? `${row.item_code} - ${material.name}` : row.item_code;
+      uniqueItems.set(row.item_code, label);
+    });
+    
+    // Add items from materials that might not be in inventory
+    materials.forEach(material => {
+      if (!uniqueItems.has(material.item_code)) {
+        uniqueItems.set(material.item_code, `${material.item_code} - ${material.name}`);
+      }
+    });
+    
+    return Array.from(uniqueItems.entries()).map(([value, label]) => ({ value, label }));
+  };
 
   if (!project) {
     return <div className="p-6">Loading...</div>;
@@ -158,6 +185,7 @@ const ProjectDetail = () => {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[50px]">Exclude</TableHead>
               <TableHead>Item Code</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Required Qty</TableHead>
@@ -172,14 +200,22 @@ const ProjectDetail = () => {
             {filteredRequirements.map((req) => {
               const computed = getComputedValues(req.item_code);
               return (
-                <TableRow key={req.id}>
+                <TableRow key={req.id} className={req.excluded ? 'opacity-60' : ''}>
                   <TableCell>
-                    <Input
+                    <Checkbox
+                      checked={req.excluded || false}
+                      onCheckedChange={(checked) => updateRequirement(req, 'excluded', checked)}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Combobox
+                      options={getInventoryOptions()}
                       value={req.item_code}
-                      onChange={(e) => updateRequirement(req, 'item_code', e.target.value)}
-                      onBlur={() => setEditingCell(null)}
-                      className="border-none p-1 h-8"
-                      placeholder="Enter item code"
+                      onValueChange={(value) => updateRequirement(req, 'item_code', value)}
+                      placeholder="Select item..."
+                      searchPlaceholder="Search items..."
+                      emptyText="No items found."
+                      className="border-none p-1 h-8 min-w-[200px]"
                     />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
@@ -191,6 +227,7 @@ const ProjectDetail = () => {
                       value={req.required_qty}
                       onChange={(e) => updateRequirement(req, 'required_qty', Number(e.target.value))}
                       className="border-none p-1 h-8 w-20"
+                      disabled={req.excluded}
                     />
                   </TableCell>
                   <TableCell>
@@ -199,18 +236,19 @@ const ProjectDetail = () => {
                       value={req.withdrawn_qty}
                       onChange={(e) => updateRequirement(req, 'withdrawn_qty', Number(e.target.value))}
                       className="border-none p-1 h-8 w-20"
+                      disabled={req.excluded}
                     />
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">
-                      {computed.allocatable_qty}
+                    <Badge variant={req.excluded ? 'outline' : 'secondary'}>
+                      {req.excluded ? 'N/A' : computed.allocatable_qty}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <Badge 
-                      variant={computed.missing_qty > 0 ? 'destructive' : 'default'}
+                      variant={req.excluded ? 'outline' : (computed.missing_qty > 0 ? 'destructive' : 'default')}
                     >
-                      {computed.missing_qty}
+                      {req.excluded ? 'N/A' : computed.missing_qty}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -236,7 +274,7 @@ const ProjectDetail = () => {
             })}
             {filteredRequirements.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                   {showMissingOnly ? 'No requirements with missing quantities' : 'No requirements found'}
                 </TableCell>
               </TableRow>

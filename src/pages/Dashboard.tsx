@@ -13,6 +13,7 @@ import type { ProjectItemComputed, InventoryRow, Material, Project } from '@/dom
 interface ItemAggregation {
   item_code: string;
   description: string;
+  project_names: string[];
   total_required: number;
   total_withdrawn: number;
   total_allocatable: number;
@@ -77,16 +78,25 @@ const Dashboard = () => {
     const itemMap = new Map<string, ItemAggregation>();
     
     computed.forEach(item => {
+      const project = projects.find(p => p.project_id === item.project_id);
+      const projectName = project?.name || item.project_id;
+      
       const existing = itemMap.get(item.item_code) || {
         item_code: item.item_code,
         // Use inventory notes as description, fallback to material description
         description: inventory.find(inv => inv.item_code === item.item_code)?.notes || 
                     materials.find(m => m.item_code === item.item_code)?.description || '',
+        project_names: [],
         total_required: 0,
         total_withdrawn: 0,
         total_allocatable: 0,
         total_missing: 0
       };
+      
+      // Add project name if not already included
+      if (!existing.project_names.includes(projectName)) {
+        existing.project_names.push(projectName);
+      }
       
       existing.total_required += item.required_qty;
       existing.total_withdrawn += item.withdrawn_qty;
@@ -135,7 +145,8 @@ const Dashboard = () => {
         const query = searchQuery.toLowerCase().trim();
         filtered = filtered.filter(item => 
           item.item_code.toLowerCase().includes(query) ||
-          item.description.toLowerCase().includes(query)
+          item.description.toLowerCase().includes(query) ||
+          item.project_names.some(name => name.toLowerCase().includes(query))
         );
       }
       
@@ -231,6 +242,7 @@ const Dashboard = () => {
       filteredItems.map(item => ({
         'Item Code': item.item_code,
         'Description': item.description,
+        'Projects': item.project_names.join(', '),
         'Total Required': item.total_required,
         'Total Withdrawn': item.total_withdrawn,
         'Total Allocatable': item.total_allocatable,
@@ -367,7 +379,7 @@ const Dashboard = () => {
                   <Input
                     type="text"
                     placeholder={groupingMode === 'item_code' ? 
-                      "Search by item code or description..." : 
+                      "Search by item code, description, or project..." : 
                       "Search by project name or supervisors..."}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -419,6 +431,12 @@ const Dashboard = () => {
                       <TableHead>
                         <Button variant="ghost" onClick={() => handleSort('description')} className="h-auto p-0 font-semibold">
                           Description
+                          <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" onClick={() => handleSort('project_name')} className="h-auto p-0 font-semibold">
+                          Projects
                           <ArrowUpDown className="ml-2 h-4 w-4" />
                         </Button>
                       </TableHead>
@@ -482,6 +500,15 @@ const Dashboard = () => {
                         <TableCell className="text-muted-foreground">
                           {item.description || 'No description'}
                         </TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-xs">
+                          <div className="space-y-1">
+                            {item.project_names.map((projectName, idx) => (
+                              <div key={idx} className="truncate">
+                                {projectName}
+                              </div>
+                            ))}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right">
                           {item.total_required.toLocaleString()}
                         </TableCell>
@@ -505,7 +532,7 @@ const Dashboard = () => {
                     
                     {filteredItems.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                           {searchQuery || showOnlyMissing ? 'No items match your filters' : 'No shortage data available'}
                         </TableCell>
                       </TableRow>

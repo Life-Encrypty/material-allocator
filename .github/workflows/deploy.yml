@@ -1,0 +1,45 @@
+name: Build & Deploy React App
+
+on:
+  push:
+    branches:
+      - release
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build React app
+        run: npm run build:prod
+
+      - name: Deploy to BunnyCDN Storage via HTTP API
+        env:
+          BUNNY_STORAGE_ZONE: ${{ secrets.BUNNY_STORAGE_ZONE }}
+          BUNNY_STORAGE_API_KEY: ${{ secrets.BUNNY_STORAGE_API_KEY }}
+          BUNNY_STORAGE_API_URL: ${{ secrets.BUNNY_STORAGE_API_URL }}
+          DEPLOY_PATH: /npc/material-allocator
+          BUILD_DIR: dist
+        run: |
+          find "$BUILD_DIR" -type f | while read -r file; do
+            relPath="${file#$BUILD_DIR/}"
+            relPath="${relPath#/}"
+            destPath="${DEPLOY_PATH%/}/${relPath}"
+            destPath="${destPath//\/\///}"
+            url="https://${BUNNY_STORAGE_API_URL}/${BUNNY_STORAGE_ZONE}/${destPath}"
+            echo "Uploading: $file  ->  $url"
+            curl -f -T "$file" \
+                 -H "AccessKey: $BUNNY_STORAGE_API_KEY" \
+                 "$url"
+          done

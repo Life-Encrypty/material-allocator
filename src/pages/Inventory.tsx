@@ -3,10 +3,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Search, Package, AlertTriangle, TrendingUp, TrendingDown, Upload, FileSpreadsheet } from 'lucide-react'
+import { Plus, Search, Package, AlertTriangle, TrendingUp, TrendingDown, Upload, FileSpreadsheet, Trash2 } from 'lucide-react'
 import { FakeApi } from '@/api/FakeApi'
 import { parseInventory } from '@/utils/xlsx'
+import { K } from '@/storage/keys'
 import type { InventorySnapshot, InventoryRow } from '@/domain/types'
 
 const Inventory = () => {
@@ -15,6 +17,9 @@ const Inventory = () => {
   const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(null)
   const [currentInventory, setCurrentInventory] = useState<InventoryRow[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false)
+  const [pendingSnapshotId, setPendingSnapshotId] = useState<string | null>(null)
+  const [showClearDialog, setShowClearDialog] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
@@ -85,16 +90,39 @@ const Inventory = () => {
   }
 
   const handleSetActiveSnapshot = (snapshotId: string) => {
-    const snapshot = snapshots.find(s => s.snapshot_id === snapshotId)
-    if (snapshot) {
-      FakeApi.setActiveSnapshot(snapshot)
-      loadInventoryData()
-      
-      toast({
-        title: "Active snapshot changed",
-        description: `Switched to snapshot: ${snapshot.name}`,
-      })
+    setPendingSnapshotId(snapshotId)
+    setShowConfirmDialog(true)
+  }
+
+  const confirmSnapshotChange = () => {
+    if (pendingSnapshotId) {
+      const snapshot = snapshots.find(s => s.snapshot_id === pendingSnapshotId)
+      if (snapshot) {
+        FakeApi.setActiveSnapshot(snapshot)
+        loadInventoryData()
+        
+        toast({
+          title: "Active snapshot changed",
+          description: `Switched to snapshot: ${snapshot.name}`,
+        })
+      }
     }
+    setShowConfirmDialog(false)
+    setPendingSnapshotId(null)
+  }
+
+  const handleClearAllData = () => {
+    // Clear all localStorage keys with db:v1: prefix
+    const keysToDelete = Object.keys(localStorage).filter(key => key.startsWith('db:v1:'))
+    keysToDelete.forEach(key => localStorage.removeItem(key))
+    
+    // Reload page to reset state
+    window.location.reload()
+    
+    toast({
+      title: "Data cleared",
+      description: "All database data has been cleared.",
+    })
   }
 
   const getStockStatus = (current: number) => {
@@ -123,10 +151,20 @@ const Inventory = () => {
             Track and manage material stock levels
           </p>
         </div>
-        <Button className="bg-primary hover:bg-primary-hover">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Material
-        </Button>
+        <div className="flex space-x-2">
+          <Button className="bg-primary hover:bg-primary-hover">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Material
+          </Button>
+          <Button 
+            variant="destructive" 
+            size="sm"
+            onClick={() => setShowClearDialog(true)}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Clear Data (v1)
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -348,6 +386,41 @@ const Inventory = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Confirmation Dialogs */}
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch Active Snapshot</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to switch to snapshot "{pendingSnapshotId}"? This will change the active inventory data used for all calculations.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmSnapshotChange}>
+              Confirm Switch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showClearDialog} onOpenChange={setShowClearDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear All Data</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to clear all database data? This will remove all projects, requirements, inventory snapshots, and materials. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleClearAllData} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Clear All Data
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

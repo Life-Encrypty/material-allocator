@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
-import { ArrowLeft, Plus, Trash2, Filter } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Filter, Download } from 'lucide-react';
 import { FakeApi } from '@/api/FakeApi';
 import { ProjectMetadataPanel } from '@/components/ProjectMetadataPanel';
 import { toast } from 'sonner';
@@ -70,12 +70,18 @@ const ProjectDetail = () => {
   const updateRequirement = (requirement: ProjectRequirement, field: keyof ProjectRequirement, value: any) => {
     const updated = { ...requirement, [field]: value };
     
-    // Clamp withdrawn_qty to 0..required_qty
+    // Clamp withdrawn_qty to 0..required_qty and show warning if clamped
     if (field === 'withdrawn_qty' || field === 'required_qty') {
       const requiredQty = field === 'required_qty' ? value : updated.required_qty;
       const withdrawnQty = field === 'withdrawn_qty' ? value : updated.withdrawn_qty;
       
-      updated.withdrawn_qty = Math.max(0, Math.min(withdrawnQty, requiredQty));
+      const clampedWithdrawn = Math.max(0, Math.min(withdrawnQty, requiredQty));
+      
+      if (field === 'withdrawn_qty' && withdrawnQty > requiredQty) {
+        toast.error(`Withdrawn quantity cannot exceed required quantity (${requiredQty}). Value clamped to ${requiredQty}.`);
+      }
+      
+      updated.withdrawn_qty = clampedWithdrawn;
     }
     
     FakeApi.upsertRequirement(updated);
@@ -124,6 +130,42 @@ const ProjectDetail = () => {
     });
     
     return Array.from(uniqueItems.entries()).map(([value, label]) => ({ value, label }));
+  };
+
+  const exportToCSV = () => {
+    if (!project) return;
+    
+    const csvData = filteredRequirements.map(req => {
+      const computed = getComputedValues(req.item_code);
+      return {
+        'Complete/Exclude': req.exclude_from_allocation ? 'Yes' : 'No',
+        'Item Code': req.item_code,
+        'Description': getMaterialDescription(req.item_code),
+        'Required Qty': req.required_qty,
+        'Withdrawn Qty': req.withdrawn_qty,
+        'Allocatable Qty': req.exclude_from_allocation ? 0 : computed.allocatable_qty,
+        'Missing Qty': req.exclude_from_allocation ? 0 : computed.missing_qty,
+        'Notes': req.notes || ''
+      };
+    });
+
+    const headers = Object.keys(csvData[0] || {});
+    const csvContent = [
+      headers.join(','),
+      ...csvData.map(row => headers.map(header => 
+        `"${row[header as keyof typeof row]}"`.replace(/"/g, '""')
+      ).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `project_${project.project_id}_requirements.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success('Requirements exported to CSV');
   };
 
   const onProjectUpdated = () => {
@@ -185,6 +227,15 @@ const ProjectDetail = () => {
             <Filter className="h-4 w-4 mr-2" />
             {showMissingOnly ? 'Show All' : 'Only Missing > 0'}
           </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={exportToCSV}
+            disabled={filteredRequirements.length === 0}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export CSV
+          </Button>
         </div>
         <div className="text-sm text-muted-foreground">
           {filteredRequirements.length} requirement(s)
@@ -211,9 +262,13 @@ const ProjectDetail = () => {
             {filteredRequirements.map((req) => {
               const computed = getComputedValues(req.item_code);
               const isExcluded = req.exclude_from_allocation;
+              const hasMissingQty = !isExcluded && computed.missing_qty > 0;
               
               return (
-                <TableRow key={req.id} className={isExcluded ? 'opacity-60 bg-muted/50' : ''}>
+                <TableRow 
+                  key={req.id} 
+                  className={`${isExcluded ? 'opacity-60 bg-muted/50' : ''} ${hasMissingQty ? 'bg-destructive/10 border-l-4 border-l-destructive' : ''}`}
+                >
                   <TableCell>
                     <Checkbox
                       checked={isExcluded || false}

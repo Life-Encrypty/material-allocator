@@ -5,11 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Search, Package, AlertTriangle, TrendingUp, TrendingDown, Upload, FileSpreadsheet, Trash2 } from 'lucide-react'
+import { Plus, Search, Package, AlertTriangle, TrendingUp, TrendingDown, Upload, FileSpreadsheet, Trash2, Download } from 'lucide-react'
 import { FakeApi } from '@/api/FakeApi'
 import { parseInventory } from '@/utils/xlsx'
 import { K } from '@/storage/keys'
-import type { InventorySnapshot, InventoryRow } from '@/domain/types'
+import type { InventorySnapshot, InventoryRow, Material } from '@/domain/types'
 
 const Inventory = () => {
   const [searchTerm, setSearchTerm] = useState('')
@@ -36,6 +36,43 @@ const Inventory = () => {
     setSnapshots(snapshotsList)
     setActiveSnapshotId(activeId)
     setCurrentInventory(inventory)
+  }
+
+  const downloadInventoryFile = () => {
+    const materials = FakeApi.listMaterials()
+    
+    const csvData = currentInventory.map(item => {
+      const material = materials.find(m => m.item_code === item.item_code)
+      return {
+        'Item Code': item.item_code,
+        'Description': material?.name || material?.description || '',
+        'Unit': material?.unit || '',
+        'Current Balance': item.current_balance,
+        'Location': item.location || '',
+        'Notes': item.notes || ''
+      }
+    })
+
+    const headers = Object.keys(csvData[0] || {})
+    const csvContent = [
+      headers.join(','),
+      ...csvData.map(row => headers.map(header => 
+        `"${row[header as keyof typeof row]}"`.replace(/"/g, '""')
+      ).join(','))
+    ].join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `inventory_${activeSnapshotId || 'current'}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    toast({
+      title: "Inventory exported",
+      description: `Downloaded ${currentInventory.length} inventory items as CSV`,
+    })
   }
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -155,6 +192,15 @@ const Inventory = () => {
           <Button className="bg-primary hover:bg-primary-hover">
             <Plus className="h-4 w-4 mr-2" />
             Add Material
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={downloadInventoryFile}
+            disabled={currentInventory.length === 0}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Download Inventory
           </Button>
           <Button 
             variant="destructive" 

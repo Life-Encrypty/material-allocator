@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { FakeApi } from '@/api/FakeApi';
 import { toast } from 'sonner';
 import type { Project } from '@/domain/types';
@@ -14,6 +16,7 @@ interface ProjectMetadataPanelProps {
 
 export const ProjectMetadataPanel = ({ project, onProjectUpdated }: ProjectMetadataPanelProps) => {
   const [metadata, setMetadata] = useState(project.meta || {});
+  const [isOpen, setIsOpen] = useState(false);
 
   const handleMetadataChange = (field: string, value: string) => {
     setMetadata(prev => ({
@@ -31,6 +34,18 @@ export const ProjectMetadataPanel = ({ project, onProjectUpdated }: ProjectMetad
     FakeApi.upsertProject(updatedProject);
     onProjectUpdated();
     toast.success('Project metadata updated');
+  };
+
+  const deleteEmptyTemplate = () => {
+    const updatedProject = {
+      ...project,
+      meta: {}
+    };
+    
+    FakeApi.upsertProject(updatedProject);
+    setMetadata({});
+    onProjectUpdated();
+    toast.success('Project metadata template cleared');
   };
 
   const metadataFields = [
@@ -52,34 +67,53 @@ export const ProjectMetadataPanel = ({ project, onProjectUpdated }: ProjectMetad
   ];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Project Metadata</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {metadataFields.map(({ key, label, placeholder }) => (
-            <div key={key} className="space-y-2">
-              <Label htmlFor={key} className="text-sm font-medium">
-                {label}
-              </Label>
-              <Input
-                id={key}
-                value={metadata[key as keyof typeof metadata] || ''}
-                onChange={(e) => handleMetadataChange(key, e.target.value)}
-                placeholder={placeholder}
-                className="text-sm"
-              />
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+            <div className="flex items-center justify-between">
+              <CardTitle>Project Metadata</CardTitle>
+              <div className="flex items-center space-x-2">
+                {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </div>
             </div>
-          ))}
-        </div>
-        
-        <div className="mt-6">
-          <Button onClick={saveMetadata}>
-            Save Metadata
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {metadataFields.map(({ key, label, placeholder }) => (
+                <div key={key} className="space-y-2">
+                  <Label htmlFor={key} className="text-sm font-medium">
+                    {label}
+                  </Label>
+                  <Input
+                    id={key}
+                    value={metadata[key as keyof typeof metadata] || ''}
+                    onChange={(e) => handleMetadataChange(key, e.target.value)}
+                    placeholder={placeholder}
+                    className="text-sm"
+                  />
+                </div>
+              ))}
+            </div>
+            
+            <div className="flex items-center justify-between mt-6">
+              <Button onClick={saveMetadata}>
+                Save Metadata
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={deleteEmptyTemplate}
+                className="text-destructive hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Clear Template
+              </Button>
+            </div>
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   );
 };

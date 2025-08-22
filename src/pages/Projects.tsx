@@ -258,7 +258,7 @@ const Projects = () => {
         onProjectAdded={loadProjects}
       />
     </div>
-  )
-}
+  );
+};
 
-export default Projects
+export default Projects;

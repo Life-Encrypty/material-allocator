@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Plus, GripVertical, Eye, Trash2 } from 'lucide-react';
+import { Plus, GripVertical, Eye, Trash2, FolderOpen } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
@@ -12,6 +12,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { FakeApi } from '@/api/FakeApi';
 import AddProjectModal from '@/components/AddProjectModal';
 import { ProjectSearchForm } from '@/components/ProjectSearchForm';
+import { BulkProjectImporter } from '@/components/BulkProjectImporter';
 import { toast } from 'sonner';
 import type { Project } from '@/domain/types';
 
@@ -147,6 +148,7 @@ const Projects = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBulkImporter, setShowBulkImporter] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
   const sensors = useSensors(
@@ -245,10 +247,19 @@ const Projects = () => {
             Manage and track project progress • Drag to reorder by priority (0 = highest)
           </p>
         </div>
-        <Button onClick={() => setShowAddModal(true)} className="bg-primary hover:bg-primary-hover">
-          <Plus className="h-4 w-4 mr-2" />
-          New Project
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline"
+            onClick={() => setShowBulkImporter(true)}
+          >
+            <FolderOpen className="h-4 w-4 mr-2" />
+            Bulk Import
+          </Button>
+          <Button onClick={() => setShowAddModal(true)} className="bg-primary hover:bg-primary-hover">
+            <Plus className="h-4 w-4 mr-2" />
+            New Project
+          </Button>
+        </div>
       </div>
 
       {/* Search Form */}
@@ -333,6 +344,13 @@ const Projects = () => {
         open={showAddModal}
         onOpenChange={setShowAddModal}
         onProjectAdded={loadProjects}
+      />
+
+      {/* Bulk Project Importer */}
+      <BulkProjectImporter
+        isOpen={showBulkImporter}
+        onClose={() => setShowBulkImporter(false)}
+        onImportComplete={loadProjects}
       />
     </div>
   );

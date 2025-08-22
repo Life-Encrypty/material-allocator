@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
 import { ArrowLeft, Plus, Trash2, Filter } from 'lucide-react';
 import { FakeApi } from '@/api/FakeApi';
+import { ProjectMetadataPanel } from '@/components/ProjectMetadataPanel';
 import { toast } from 'sonner';
 import type { Project, ProjectRequirement, Material, ProjectItemComputed, InventoryRow } from '@/domain/types';
 
@@ -21,7 +21,6 @@ const ProjectDetail = () => {
   const [computedData, setComputedData] = useState<ProjectItemComputed[]>([]);
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [showMissingOnly, setShowMissingOnly] = useState(false);
-  const [editingCell, setEditingCell] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -70,6 +69,15 @@ const ProjectDetail = () => {
 
   const updateRequirement = (requirement: ProjectRequirement, field: keyof ProjectRequirement, value: any) => {
     const updated = { ...requirement, [field]: value };
+    
+    // Clamp withdrawn_qty to 0..required_qty
+    if (field === 'withdrawn_qty' || field === 'required_qty') {
+      const requiredQty = field === 'required_qty' ? value : updated.required_qty;
+      const withdrawnQty = field === 'withdrawn_qty' ? value : updated.withdrawn_qty;
+      
+      updated.withdrawn_qty = Math.max(0, Math.min(withdrawnQty, requiredQty));
+    }
+    
     FakeApi.upsertRequirement(updated);
     loadData();
     toast.success('Requirement updated');
@@ -84,7 +92,7 @@ const ProjectDetail = () => {
       item_code: '',
       required_qty: 0,
       withdrawn_qty: 0,
-      excluded: false,
+      exclude_from_allocation: false,
       notes: '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -96,35 +104,35 @@ const ProjectDetail = () => {
   };
 
   const deleteRequirement = (reqId: string) => {
-    // For demo purposes, we'll just filter it out since FakeApi doesn't have delete
-    // In real implementation, you'd have FakeApi.deleteRequirement(reqId)
-    const updatedReqs = requirements.filter(r => r.id !== reqId);
-    // This is a workaround - in real app you'd need proper delete method
+    FakeApi.deleteRequirement(reqId);
+    loadData();
     toast.success('Requirement deleted');
   };
 
   const filteredRequirements = showMissingOnly 
-    ? requirements.filter(req => getComputedValues(req.item_code).missing_qty > 0)
+    ? requirements.filter(req => !req.exclude_from_allocation && getComputedValues(req.item_code).missing_qty > 0)
     : requirements;
 
   const getInventoryOptions = () => {
     const uniqueItems = new Map<string, string>();
     
-    // Add items from current inventory
+    // Add items from current inventory only (active snapshot)
     inventory.forEach(row => {
       const material = materials.find(m => m.item_code === row.item_code);
       const label = material ? `${row.item_code} - ${material.name}` : row.item_code;
       uniqueItems.set(row.item_code, label);
     });
     
-    // Add items from materials that might not be in inventory
-    materials.forEach(material => {
-      if (!uniqueItems.has(material.item_code)) {
-        uniqueItems.set(material.item_code, `${material.item_code} - ${material.name}`);
-      }
-    });
-    
     return Array.from(uniqueItems.entries()).map(([value, label]) => ({ value, label }));
+  };
+
+  const onProjectUpdated = () => {
+    if (!id) return;
+    const projects = FakeApi.listProjects();
+    const updatedProject = projects.find(p => p.project_id === id);
+    if (updatedProject) {
+      setProject(updatedProject);
+    }
   };
 
   if (!project) {
@@ -158,6 +166,9 @@ const ProjectDetail = () => {
         </div>
       </div>
 
+      {/* Project Metadata Panel */}
+      <ProjectMetadataPanel project={project} onProjectUpdated={onProjectUpdated} />
+
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
@@ -185,7 +196,7 @@ const ProjectDetail = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[50px]">Exclude</TableHead>
+              <TableHead className="w-[80px]">Complete/Exclude</TableHead>
               <TableHead>Item Code</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Required Qty</TableHead>
@@ -199,12 +210,14 @@ const ProjectDetail = () => {
           <TableBody>
             {filteredRequirements.map((req) => {
               const computed = getComputedValues(req.item_code);
+              const isExcluded = req.exclude_from_allocation;
+              
               return (
-                <TableRow key={req.id} className={req.excluded ? 'opacity-60' : ''}>
+                <TableRow key={req.id} className={isExcluded ? 'opacity-60 bg-muted/50' : ''}>
                   <TableCell>
                     <Checkbox
-                      checked={req.excluded || false}
-                      onCheckedChange={(checked) => updateRequirement(req, 'excluded', checked)}
+                      checked={isExcluded || false}
+                      onCheckedChange={(checked) => updateRequirement(req, 'exclude_from_allocation', checked)}
                     />
                   </TableCell>
                   <TableCell>
@@ -213,8 +226,8 @@ const ProjectDetail = () => {
                       value={req.item_code}
                       onValueChange={(value) => updateRequirement(req, 'item_code', value)}
                       placeholder="Select item..."
-                      searchPlaceholder="Search items..."
-                      emptyText="No items found."
+                      searchPlaceholder="Search inventory items..."
+                      emptyText="No items found in active inventory."
                       className="border-none p-1 h-8 min-w-[200px]"
                     />
                   </TableCell>
@@ -227,7 +240,8 @@ const ProjectDetail = () => {
                       value={req.required_qty}
                       onChange={(e) => updateRequirement(req, 'required_qty', Number(e.target.value))}
                       className="border-none p-1 h-8 w-20"
-                      disabled={req.excluded}
+                      disabled={isExcluded}
+                      min="0"
                     />
                   </TableCell>
                   <TableCell>
@@ -236,19 +250,21 @@ const ProjectDetail = () => {
                       value={req.withdrawn_qty}
                       onChange={(e) => updateRequirement(req, 'withdrawn_qty', Number(e.target.value))}
                       className="border-none p-1 h-8 w-20"
-                      disabled={req.excluded}
+                      disabled={isExcluded}
+                      min="0"
+                      max={req.required_qty}
                     />
                   </TableCell>
                   <TableCell>
-                    <Badge variant={req.excluded ? 'outline' : 'secondary'}>
-                      {req.excluded ? 'N/A' : computed.allocatable_qty}
+                    <Badge variant={isExcluded ? 'outline' : 'secondary'}>
+                      {isExcluded ? 'Excluded' : computed.allocatable_qty}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <Badge 
-                      variant={req.excluded ? 'outline' : (computed.missing_qty > 0 ? 'destructive' : 'default')}
+                      variant={isExcluded ? 'outline' : (computed.missing_qty > 0 ? 'destructive' : 'default')}
                     >
-                      {req.excluded ? 'N/A' : computed.missing_qty}
+                      {isExcluded ? 'Excluded' : computed.missing_qty}
                     </Badge>
                   </TableCell>
                   <TableCell>

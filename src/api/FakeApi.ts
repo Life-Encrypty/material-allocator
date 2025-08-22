@@ -38,6 +38,22 @@ class FakeApiService {
     write(K.projects, projects);
   }
 
+  deleteProject(projectId: string): void {
+    const projects = this.listProjects();
+    const filteredProjects = projects.filter(p => p.project_id !== projectId);
+    write(K.projects, filteredProjects);
+    
+    // Remove related memberships
+    const memberships = this.listMemberships();
+    const filteredMemberships = memberships.filter(m => m.project_id !== projectId);
+    this.setMemberships(filteredMemberships);
+    
+    // Remove related requirements
+    const requirements = this.listRequirements();
+    const filteredRequirements = requirements.filter(r => r.project_id !== projectId);
+    write(K.requirements, filteredRequirements);
+  }
+
   // Memberships
   listMemberships(): UserProject[] {
     return read<UserProject[]>(K.memberships, []);
@@ -97,6 +113,12 @@ class FakeApiService {
     }
     
     write(K.requirements, requirements);
+  }
+
+  deleteRequirement(requirementId: string): void {
+    const requirements = this.listRequirements();
+    const filteredRequirements = requirements.filter(r => r.id !== requirementId);
+    write(K.requirements, filteredRequirements);
   }
 
   // Inventory Snapshots
@@ -175,6 +197,31 @@ class FakeApiService {
       .map(m => m.project_id);
     
     return projects.filter(p => userProjectIds.includes(p.project_id));
+  }
+
+  // Search projects by name, id, or metadata
+  searchProjects(query: string): Project[] {
+    if (!query.trim()) return this.listProjects();
+    
+    const projects = this.listProjects();
+    const searchTerm = query.toLowerCase().trim();
+    
+    return projects.filter(project => {
+      // Search in name and project_id
+      if (project.name.toLowerCase().includes(searchTerm) || 
+          project.project_id.toLowerCase().includes(searchTerm)) {
+        return true;
+      }
+      
+      // Search in metadata fields
+      if (project.meta) {
+        return Object.values(project.meta).some(value => 
+          value && value.toLowerCase().includes(searchTerm)
+        );
+      }
+      
+      return false;
+    });
   }
 }
 

@@ -3,22 +3,25 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus, GripVertical, Eye } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Plus, GripVertical, Eye, Trash2 } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { FakeApi } from '@/api/FakeApi';
 import AddProjectModal from '@/components/AddProjectModal';
+import { ProjectSearchForm } from '@/components/ProjectSearchForm';
 import { toast } from 'sonner';
 import type { Project } from '@/domain/types';
 
 interface SortableProjectProps {
   project: Project;
   onView: (projectId: string) => void;
+  onDelete: (projectId: string) => void;
 }
 
-const SortableProject = ({ project, onView }: SortableProjectProps) => {
+const SortableProject = ({ project, onView, onDelete }: SortableProjectProps) => {
   const {
     attributes,
     listeners,
@@ -75,6 +78,11 @@ const SortableProject = ({ project, onView }: SortableProjectProps) => {
                   {project.description}
                 </CardDescription>
               )}
+              {project.meta?.['اسم المشروع'] && (
+                <CardDescription className="mt-1 text-sm text-accent">
+                  {project.meta['اسم المشروع']}
+                </CardDescription>
+              )}
             </div>
           </div>
           <Badge className={getStatusColor(project.status)}>
@@ -87,16 +95,47 @@ const SortableProject = ({ project, onView }: SortableProjectProps) => {
           <div className="text-sm text-muted-foreground">
             Created: {new Date(project.created_at).toLocaleDateString()}
           </div>
-          <Button 
-            size="sm" 
-            onClick={(e) => {
-              e.stopPropagation();
-              onView(project.project_id);
-            }}
-          >
-            <Eye className="h-4 w-4 mr-2" />
-            View
-          </Button>
+          <div className="flex items-center space-x-2">
+            <Button 
+              size="sm" 
+              onClick={(e) => {
+                e.stopPropagation();
+                onView(project.project_id);
+              }}
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              View
+            </Button>
+            
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button 
+                  size="sm" 
+                  variant="destructive"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Project</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Delete project {project.project_id} ({project.name})? This will also remove its requirements and memberships.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={() => onDelete(project.project_id)}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -106,7 +145,10 @@ const SortableProject = ({ project, onView }: SortableProjectProps) => {
 const Projects = () => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -120,13 +162,14 @@ const Projects = () => {
 
   const loadProjects = () => {
     const projectList = FakeApi.listProjects();
-    // Sort by priority descending, then by project_id ascending
+    // Sort by priority ascending (0 = highest), then by project_id ascending
     const sortedProjects = [...projectList].sort((a, b) => {
-      if (b.priority !== a.priority) {
-        return b.priority - a.priority;
+      if (a.priority !== b.priority) {
+        return a.priority - b.priority;
       }
       return a.project_id.localeCompare(b.project_id);
     });
+    setAllProjects(sortedProjects);
     setProjects(sortedProjects);
   };
 
@@ -139,10 +182,10 @@ const Projects = () => {
       
       const newProjects = arrayMove(projects, oldIndex, newIndex);
       
-      // Update priorities based on new order (higher index = higher priority)
+      // Update priorities based on new order (lower index = higher priority, 0 = highest)
       const updatedProjects = newProjects.map((project, index) => ({
         ...project,
-        priority: newProjects.length - index
+        priority: index
       }));
       
       // Save each project with new priority
@@ -151,6 +194,7 @@ const Projects = () => {
       });
       
       setProjects(updatedProjects);
+      loadProjects(); // Reload to sync with all projects
       toast.success('Project order updated');
     }
   };
@@ -159,12 +203,33 @@ const Projects = () => {
     navigate(`/projects/${projectId}`);
   };
 
+  const handleDeleteProject = (projectId: string) => {
+    FakeApi.deleteProject(projectId);
+    loadProjects();
+    toast.success('Project deleted successfully');
+  };
+
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    if (query.trim()) {
+      const filtered = FakeApi.searchProjects(query);
+      setProjects(filtered);
+    } else {
+      setProjects(allProjects);
+    }
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setProjects(allProjects);
+  };
+
   const getProjectStats = () => {
-    const total = projects.length;
-    const completed = projects.filter(p => p.status === 'Completed').length;
-    const planning = projects.filter(p => p.status === 'Planning').length;
-    const onHold = projects.filter(p => p.status === 'On Hold').length;
-    const inProgress = projects.filter(p => p.status === 'In Progress').length;
+    const total = allProjects.length;
+    const completed = allProjects.filter(p => p.status === 'Completed').length;
+    const planning = allProjects.filter(p => p.status === 'Planning').length;
+    const onHold = allProjects.filter(p => p.status === 'On Hold').length;
+    const inProgress = allProjects.filter(p => p.status === 'In Progress').length;
     
     return { total, completed, planning, onHold, inProgress };
   };
@@ -177,7 +242,7 @@ const Projects = () => {
         <div>
           <h1 className="text-3xl font-bold">Projects</h1>
           <p className="text-muted-foreground mt-2">
-            Manage and track project progress • Drag to reorder by priority
+            Manage and track project progress • Drag to reorder by priority (0 = highest)
           </p>
         </div>
         <Button onClick={() => setShowAddModal(true)} className="bg-primary hover:bg-primary-hover">
@@ -185,6 +250,13 @@ const Projects = () => {
           New Project
         </Button>
       </div>
+
+      {/* Search Form */}
+      <ProjectSearchForm 
+        onSearch={handleSearch}
+        hasActiveFilter={!!searchQuery}
+        onClear={handleClearSearch}
+      />
 
       {/* Projects List - Draggable */}
       <div className="space-y-4">
@@ -199,6 +271,7 @@ const Projects = () => {
                 key={project.project_id} 
                 project={project} 
                 onView={handleViewProject}
+                onDelete={handleDeleteProject}
               />
             ))}
           </SortableContext>
@@ -207,11 +280,15 @@ const Projects = () => {
         {projects.length === 0 && (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
-              <p className="text-muted-foreground text-lg mb-4">No projects found</p>
-              <Button onClick={() => setShowAddModal(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create your first project
-              </Button>
+              <p className="text-muted-foreground text-lg mb-4">
+                {searchQuery ? 'No projects found matching your search' : 'No projects found'}
+              </p>
+              {!searchQuery && (
+                <Button onClick={() => setShowAddModal(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create your first project
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}

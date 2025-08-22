@@ -7,6 +7,23 @@ export interface Project {
   updated_at: string;
   description?: string;
   deadline?: string;
+  meta?: {
+    'اسم المشروع'?: string;
+    'رقم الرسم'?: string;
+    'تاريخ الرسم'?: string;
+    'رقم الحساب'?: string;
+    'بند الميزانية'?: string;
+    'رقم الاستثمارى'?: string;
+    'تاريخ الفتح'?: string;
+    'الاشراف الهندسى'?: string;
+    'الاشراف الفنى'?: string;
+    'الإدارة الطالبة'?: string;
+    'الشركة المنفذة'?: string;
+    'نسبة صرف المهمات'?: string;
+    'نسبة التنفيذ'?: string;
+    'PO'?: string;
+    'PR'?: string;
+  };
 }
 
 export interface UserProject {
@@ -49,7 +66,7 @@ export interface ProjectRequirement {
   item_code: string;
   required_qty: number;
   withdrawn_qty: number;
-  excluded?: boolean;
+  exclude_from_allocation?: boolean;
   notes?: string;
   created_at: string;
   updated_at: string;

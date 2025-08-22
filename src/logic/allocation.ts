@@ -21,7 +21,7 @@ export function allocateAll({ projects, inventory, requirements }: AllocationInp
   });
   
   // Filter out excluded requirements for allocation calculation
-  const nonExcludedRequirements = requirements.filter(req => !req.excluded);
+  const nonExcludedRequirements = requirements.filter(req => !req.exclude_from_allocation);
   
   // Group non-excluded requirements by item_code
   const itemGroups = new Map<string, ProjectRequirement[]>();
@@ -73,7 +73,7 @@ export function allocateAll({ projects, inventory, requirements }: AllocationInp
   });
   
   // Add excluded requirements with zero allocatable/missing quantities
-  const excludedRequirements = requirements.filter(req => req.excluded);
+  const excludedRequirements = requirements.filter(req => req.exclude_from_allocation);
   excludedRequirements.forEach(req => {
     const priority = projectPriorityMap.get(req.project_id) ?? 999;
     result.push({

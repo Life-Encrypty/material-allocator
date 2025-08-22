@@ -13,11 +13,12 @@ import type { ProjectItemComputed, InventoryRow, Material, Project } from '@/dom
 interface ItemAggregation {
   item_code: string;
   description: string;
-  project_names: string[];
-  total_required: number;
-  total_withdrawn: number;
-  total_allocatable: number;
-  total_missing: number;
+  project_name: string;
+  project_id: string;
+  required_qty: number;
+  withdrawn_qty: number;
+  allocatable_qty: number;
+  missing_qty: number;
 }
 
 interface ProjectAggregation {
@@ -75,38 +76,29 @@ const Dashboard = () => {
   };
 
   const aggregateByItemCode = (computed: ProjectItemComputed[], inventory: InventoryRow[], materials: Material[]) => {
-    const itemMap = new Map<string, ItemAggregation>();
+    const itemProjectCombinations: ItemAggregation[] = [];
     
     computed.forEach(item => {
       const project = projects.find(p => p.project_id === item.project_id);
       const projectName = project?.name || item.project_id;
       
-      const existing = itemMap.get(item.item_code) || {
+      const itemAggregation: ItemAggregation = {
         item_code: item.item_code,
         // Use inventory notes as description, fallback to material description
         description: inventory.find(inv => inv.item_code === item.item_code)?.notes || 
                     materials.find(m => m.item_code === item.item_code)?.description || '',
-        project_names: [],
-        total_required: 0,
-        total_withdrawn: 0,
-        total_allocatable: 0,
-        total_missing: 0
+        project_name: projectName,
+        project_id: item.project_id,
+        required_qty: item.required_qty,
+        withdrawn_qty: item.withdrawn_qty,
+        allocatable_qty: item.allocatable_qty,
+        missing_qty: item.missing_qty
       };
       
-      // Add project name if not already included
-      if (!existing.project_names.includes(projectName)) {
-        existing.project_names.push(projectName);
-      }
-      
-      existing.total_required += item.required_qty;
-      existing.total_withdrawn += item.withdrawn_qty;
-      existing.total_allocatable += item.allocatable_qty;
-      existing.total_missing += item.missing_qty;
-      
-      itemMap.set(item.item_code, existing);
+      itemProjectCombinations.push(itemAggregation);
     });
     
-    setAggregatedItems(Array.from(itemMap.values()));
+    setAggregatedItems(itemProjectCombinations);
   };
 
   const aggregateByProject = (computed: ProjectItemComputed[], projects: Project[]) => {
@@ -146,13 +138,13 @@ const Dashboard = () => {
         filtered = filtered.filter(item => 
           item.item_code.toLowerCase().includes(query) ||
           item.description.toLowerCase().includes(query) ||
-          item.project_names.some(name => name.toLowerCase().includes(query))
+          item.project_name.toLowerCase().includes(query)
         );
       }
       
       // Filter by missing > 0
       if (showOnlyMissing) {
-        filtered = filtered.filter(item => item.total_missing > 0);
+        filtered = filtered.filter(item => item.missing_qty > 0);
       }
 
       // Sort items
@@ -161,11 +153,12 @@ const Dashboard = () => {
         switch (sortField) {
           case 'code': aVal = a.item_code; bVal = b.item_code; break;
           case 'description': aVal = a.description; bVal = b.description; break;
-          case 'required': aVal = a.total_required; bVal = b.total_required; break;
-          case 'withdrawn': aVal = a.total_withdrawn; bVal = b.total_withdrawn; break;
-          case 'allocatable': aVal = a.total_allocatable; bVal = b.total_allocatable; break;
-          case 'missing': aVal = a.total_missing; bVal = b.total_missing; break;
-          default: aVal = a.total_missing; bVal = b.total_missing; break;
+          case 'project_name': aVal = a.project_name; bVal = b.project_name; break;
+          case 'required': aVal = a.required_qty; bVal = b.required_qty; break;
+          case 'withdrawn': aVal = a.withdrawn_qty; bVal = b.withdrawn_qty; break;
+          case 'allocatable': aVal = a.allocatable_qty; bVal = b.allocatable_qty; break;
+          case 'missing': aVal = a.missing_qty; bVal = b.missing_qty; break;
+          default: aVal = a.missing_qty; bVal = b.missing_qty; break;
         }
         
         if (typeof aVal === 'string') {
@@ -242,11 +235,11 @@ const Dashboard = () => {
       filteredItems.map(item => ({
         'Item Code': item.item_code,
         'Description': item.description,
-        'Projects': item.project_names.join(', '),
-        'Total Required': item.total_required,
-        'Total Withdrawn': item.total_withdrawn,
-        'Total Allocatable': item.total_allocatable,
-        'Total Missing': item.total_missing
+        'Project Name': item.project_name,
+        'Required Qty': item.required_qty,
+        'Withdrawn Qty': item.withdrawn_qty,
+        'Allocatable Qty': item.allocatable_qty,
+        'Missing Qty': item.missing_qty
       })) :
       filteredProjects.map(project => ({
         'Project ID': project.project_id,
@@ -436,7 +429,7 @@ const Dashboard = () => {
                       </TableHead>
                       <TableHead>
                         <Button variant="ghost" onClick={() => handleSort('project_name')} className="h-auto p-0 font-semibold">
-                          Projects
+                          Project Name
                           <ArrowUpDown className="ml-2 h-4 w-4" />
                         </Button>
                       </TableHead>
@@ -492,39 +485,33 @@ const Dashboard = () => {
               <TableBody>
                 {groupingMode === 'item_code' ? (
                   <>
-                    {filteredItems.map((item) => (
-                      <TableRow key={item.item_code}>
+                    {filteredItems.map((item, idx) => (
+                      <TableRow key={`${item.item_code}-${item.project_id}`}>
                         <TableCell className="font-medium">
                           {item.item_code}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {item.description || 'No description'}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-xs">
-                          <div className="space-y-1">
-                            {item.project_names.map((projectName, idx) => (
-                              <div key={idx} className="truncate">
-                                {projectName}
-                              </div>
-                            ))}
-                          </div>
+                        <TableCell className="text-muted-foreground">
+                          {item.project_name}
                         </TableCell>
                         <TableCell className="text-right">
-                          {item.total_required.toLocaleString()}
+                          {item.required_qty.toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right">
-                          {item.total_withdrawn.toLocaleString()}
+                          {item.withdrawn_qty.toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right">
                           <Badge variant="secondary">
-                            {item.total_allocatable.toLocaleString()}
+                            {item.allocatable_qty.toLocaleString()}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
                           <Badge 
-                            variant={item.total_missing > 0 ? "destructive" : "default"}
+                            variant={item.missing_qty > 0 ? "destructive" : "default"}
                           >
-                            {item.total_missing.toLocaleString()}
+                            {item.missing_qty.toLocaleString()}
                           </Badge>
                         </TableCell>
                       </TableRow>

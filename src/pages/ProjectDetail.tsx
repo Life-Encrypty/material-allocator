@@ -6,10 +6,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
-import { ArrowLeft, Plus, Trash2, Filter, Download } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Filter, Download, Upload, FileDown } from 'lucide-react';
 import { FakeApi } from '@/api/FakeApi';
 import { ProjectMetadataPanel } from '@/components/ProjectMetadataPanel';
+import { ImportProjectModal } from '@/components/ImportProjectModal';
+import { SearchableCombobox } from '@/components/SearchableCombobox';
 import { toast } from 'sonner';
+import { exportProjectTemplate, type ProjectWorkbookResult } from '@/utils/xlsx';
 import type { Project, ProjectRequirement, Material, ProjectItemComputed, InventoryRow } from '@/domain/types';
 
 const ProjectDetail = () => {
@@ -21,6 +24,7 @@ const ProjectDetail = () => {
   const [computedData, setComputedData] = useState<ProjectItemComputed[]>([]);
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [showMissingOnly, setShowMissingOnly] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -120,16 +124,62 @@ const ProjectDetail = () => {
     : requirements;
 
   const getInventoryOptions = () => {
-    const uniqueItems = new Map<string, string>();
+    const options: Array<{ value: string; label: string; subtitle?: string }> = [];
     
     // Add items from current inventory only (active snapshot)
     inventory.forEach(row => {
       const material = materials.find(m => m.item_code === row.item_code);
-      const label = material ? `${row.item_code} - ${material.name}` : row.item_code;
-      uniqueItems.set(row.item_code, label);
+      const description = material?.description || material?.name || '';
+      
+      options.push({
+        value: row.item_code,
+        label: row.item_code,
+        subtitle: description
+      });
     });
     
-    return Array.from(uniqueItems.entries()).map(([value, label]) => ({ value, label }));
+    return options;
+  };
+
+  const getDescriptionOptions = () => {
+    const descriptionMap = new Map<string, { description: string; item_codes: string[] }>();
+    
+    // Group by description
+    inventory.forEach(row => {
+      const material = materials.find(m => m.item_code === row.item_code);
+      const description = material?.description || material?.name || '';
+      
+      if (description) {
+        if (descriptionMap.has(description)) {
+          descriptionMap.get(description)!.item_codes.push(row.item_code);
+        } else {
+          descriptionMap.set(description, { description, item_codes: [row.item_code] });
+        }
+      }
+    });
+    
+    return Array.from(descriptionMap.values()).map(({ description, item_codes }) => ({
+      value: description,
+      label: description,
+      subtitle: item_codes.length > 1 ? `Multiple codes: ${item_codes.join(', ')}` : item_codes[0]
+    }));
+  };
+
+  const handleDescriptionSelect = (description: string, requirement: ProjectRequirement) => {
+    // Find the item_code(s) associated with this description
+    const material = materials.find(m => 
+      (m.description || m.name || '') === description
+    );
+    
+    if (material) {
+      // Update both description and item_code
+      updateRequirement(requirement, 'item_code', material.item_code);
+    }
+  };
+
+  const handleItemCodeSelect = (item_code: string, requirement: ProjectRequirement) => {
+    // Auto-fill description when item_code is selected
+    updateRequirement(requirement, 'item_code', item_code);
   };
 
   const exportToCSV = () => {
@@ -166,6 +216,57 @@ const ProjectDetail = () => {
     document.body.removeChild(link);
     
     toast.success('Requirements exported to CSV');
+  };
+
+  const handleImportProject = (result: ProjectWorkbookResult) => {
+    if (!project) return;
+
+    // Import requirements
+    result.requirements.forEach(reqData => {
+      const existing = requirements.find(r => r.item_code === reqData.item_code);
+      const timestamp = new Date().toISOString();
+      
+      const requirement: ProjectRequirement = {
+        id: existing?.id || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        ...reqData,
+        created_at: existing?.created_at || timestamp,
+        updated_at: timestamp
+      };
+      
+      FakeApi.upsertRequirement(requirement);
+    });
+
+    // Import metadata (handle [CLEAR] markers)
+    const updatedProject = { ...project };
+    if (!updatedProject.meta) updatedProject.meta = {};
+
+    Object.entries(result.metadata).forEach(([key, value]) => {
+      if (key.startsWith('[CLEAR]')) {
+        const fieldName = key.replace('[CLEAR]', '');
+        delete updatedProject.meta![fieldName as keyof typeof updatedProject.meta];
+      } else {
+        (updatedProject.meta as any)[key] = value;
+      }
+    });
+
+    FakeApi.upsertProject(updatedProject);
+    
+    // Refresh data
+    loadData();
+    onProjectUpdated();
+    
+    toast.success(`Imported ${result.requirements.length} requirements and updated metadata`);
+  };
+
+  const handleExportTemplate = async () => {
+    if (!project) return;
+    
+    try {
+      await exportProjectTemplate(project, requirements);
+      toast.success('Project template exported');
+    } catch (error) {
+      toast.error('Failed to export template');
+    }
   };
 
   const onProjectUpdated = () => {
@@ -236,6 +337,22 @@ const ProjectDetail = () => {
             <Download className="h-4 w-4 mr-2" />
             Export CSV
           </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setShowImportModal(true)}
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Import XLSX
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={handleExportTemplate}
+          >
+            <FileDown className="h-4 w-4 mr-2" />
+            Download Template
+          </Button>
         </div>
         <div className="text-sm text-muted-foreground">
           {filteredRequirements.length} requirement(s)
@@ -276,18 +393,26 @@ const ProjectDetail = () => {
                     />
                   </TableCell>
                   <TableCell>
-                    <Combobox
+                    <SearchableCombobox
                       options={getInventoryOptions()}
                       value={req.item_code}
-                      onValueChange={(value) => updateRequirement(req, 'item_code', value)}
-                      placeholder="Select item..."
-                      searchPlaceholder="Search inventory items..."
+                      onValueChange={(value) => handleItemCodeSelect(value, req)}
+                      placeholder="Select item code..."
                       emptyText="No items found in active inventory."
-                      className="border-none p-1 h-8 min-w-[200px]"
+                      className="border-none p-1 h-auto min-w-[200px]"
+                      disabled={isExcluded}
                     />
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {getMaterialDescription(req.item_code)}
+                  <TableCell>
+                    <SearchableCombobox
+                      options={getDescriptionOptions()}
+                      value={getMaterialDescription(req.item_code)}
+                      onValueChange={(value) => handleDescriptionSelect(value, req)}
+                      placeholder="Select description..."
+                      emptyText="No descriptions found."
+                      className="border-none p-1 h-auto min-w-[200px]"
+                      disabled={isExcluded}
+                    />
                   </TableCell>
                   <TableCell>
                     <Input
@@ -353,6 +478,14 @@ const ProjectDetail = () => {
           </TableBody>
         </Table>
       </div>
+
+      {/* Import Modal */}
+      <ImportProjectModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImport={handleImportProject}
+        projectId={project.project_id}
+      />
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type { InventorySnapshot, InventoryRow } from '@/domain/types';
+import type { InventorySnapshot, InventoryRow, ProjectRequirement } from '@/domain/types';
 
 interface ParsedRow {
   item_code?: string;
@@ -157,4 +157,300 @@ function parseRow(row: any[], columnMap: Record<string, number>): ParsedRow {
   }
   
   return parsed;
+}
+
+export interface ProjectWorkbookResult {
+  requirements: Omit<ProjectRequirement, 'id' | 'created_at' | 'updated_at'>[];
+  metadata: Record<string, string>;
+  warnings: string[];
+}
+
+export async function parseProjectWorkbook(file: File, project_id: string): Promise<ProjectWorkbookResult> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        
+        const result: ProjectWorkbookResult = {
+          requirements: [],
+          metadata: {},
+          warnings: []
+        };
+
+        // Find Requirements sheet
+        const reqSheetName = workbook.SheetNames.find(name => 
+          name.toLowerCase().includes('requirements') || 
+          name.includes('المهمات')
+        );
+
+        // Find Metadata sheet
+        const metaSheetName = workbook.SheetNames.find(name => 
+          name.toLowerCase().includes('metadata') || 
+          name.includes('بيانات المشروع')
+        );
+
+        // Parse Requirements sheet
+        if (reqSheetName) {
+          const reqSheet = workbook.Sheets[reqSheetName];
+          const reqData = XLSX.utils.sheet_to_json(reqSheet, { header: 1 }) as any[][];
+          
+          if (reqData.length >= 2) {
+            const headers = reqData[0] as string[];
+            const dataRows = reqData.slice(1);
+            
+            const reqColumnMap = createRequirementsColumnMapping(headers);
+            const seenItems = new Set<string>();
+            
+            dataRows.forEach((row, index) => {
+              const parsed = parseRequirementRow(row, reqColumnMap, project_id);
+              
+              if (!parsed.item_code?.trim()) {
+                return; // Skip rows without item_code
+              }
+              
+              // Check for duplicates
+              if (seenItems.has(parsed.item_code)) {
+                result.warnings.push(`Duplicate item_code "${parsed.item_code}" at row ${index + 2}. Last row wins.`);
+              }
+              seenItems.add(parsed.item_code);
+              
+              // Validate and clamp values
+              parsed.required_qty = Math.max(0, parsed.required_qty);
+              parsed.withdrawn_qty = Math.max(0, Math.min(parsed.withdrawn_qty, parsed.required_qty));
+              
+              if (parsed.withdrawn_qty > parsed.required_qty) {
+                result.warnings.push(`Withdrawn qty clamped for item "${parsed.item_code}" at row ${index + 2}`);
+              }
+              
+              result.requirements.push(parsed);
+            });
+          }
+        } else {
+          result.warnings.push('Requirements sheet not found (expected "Requirements" or "المهمات")');
+        }
+
+        // Parse Metadata sheet
+        if (metaSheetName) {
+          const metaSheet = workbook.Sheets[metaSheetName];
+          const metaData = XLSX.utils.sheet_to_json(metaSheet, { header: 1 }) as any[][];
+          
+          if (metaData.length >= 2) {
+            const headers = metaData[0] as string[];
+            const dataRow = metaData[1]; // Single data row expected
+            
+            const metaColumnMap = createMetadataColumnMapping(headers);
+            
+            Object.entries(metaColumnMap).forEach(([field, colIndex]) => {
+              const value = dataRow[colIndex];
+              if (value !== undefined && value !== null && value !== '') {
+                if (String(value).trim() === '[CLEAR]') {
+                  // Special marker to clear field - we'll handle this in the UI
+                  result.metadata[`[CLEAR]${field}`] = '';
+                } else {
+                  result.metadata[field] = String(value).trim();
+                }
+              }
+            });
+          }
+        }
+
+        resolve(result);
+        
+      } catch (error) {
+        reject(new Error(`Failed to parse project workbook: ${error instanceof Error ? error.message : 'Unknown error'}`));
+      }
+    };
+    
+    reader.onerror = () => {
+      reject(new Error('Failed to read file'));
+    };
+    
+    reader.readAsBinaryString(file);
+  });
+}
+
+function createRequirementsColumnMapping(headers: string[]): Record<string, number> {
+  const mapping: Record<string, number> = {};
+  
+  headers.forEach((header, index) => {
+    const normalized = header?.toString().toLowerCase().trim() || '';
+    
+    // Item Code | الكود
+    if (normalized.includes('item') && normalized.includes('code') || 
+        normalized.includes('الكود') || 
+        normalized === 'item code') {
+      mapping.item_code = index;
+    }
+    
+    // Description | بيان المهمات
+    else if (normalized.includes('description') || 
+             normalized.includes('بيان') ||
+             normalized.includes('المهمات')) {
+      mapping.description = index;
+    }
+    
+    // Required Qty | المطلوب
+    else if (normalized.includes('required') || 
+             normalized.includes('المطلوب')) {
+      mapping.required_qty = index;
+    }
+    
+    // Withdrawn Qty | المنصرف
+    else if (normalized.includes('withdrawn') || 
+             normalized.includes('المنصرف')) {
+      mapping.withdrawn_qty = index;
+    }
+    
+    // Exclude | استثناء | مكتمل
+    else if (normalized.includes('exclude') || 
+             normalized.includes('استثناء') || 
+             normalized.includes('مكتمل') ||
+             normalized.includes('complete')) {
+      mapping.exclude_from_allocation = index;
+    }
+    
+    // Notes | ملاحظات
+    else if (normalized.includes('notes') || 
+             normalized.includes('ملاحظات')) {
+      mapping.notes = index;
+    }
+  });
+  
+  return mapping;
+}
+
+function createMetadataColumnMapping(headers: string[]): Record<string, number> {
+  const mapping: Record<string, number> = {};
+  
+  const fieldMappings = {
+    'اسم المشروع': 'اسم المشروع',
+    'project name': 'اسم المشروع',
+    'رقم الرسم': 'رقم الرسم', 
+    'drawing no': 'رقم الرسم',
+    'تاريخ الرسم': 'تاريخ الرسم',
+    'drawing date': 'تاريخ الرسم',
+    'رقم الحساب': 'رقم الحساب',
+    'account no': 'رقم الحساب',
+    'بند الميزانية': 'بند الميزانية',
+    'budget item': 'بند الميزانية',
+    'رقم الاستثمارى': 'رقم الاستثمارى',
+    'investment no': 'رقم الاستثمارى',
+    'تاريخ الفتح': 'تاريخ الفتح',
+    'open date': 'تاريخ الفتح',
+    'الاشراف الهندسى': 'الاشراف الهندسى',
+    'engineering supervisor': 'الاشراف الهندسى',
+    'الاشراف الفنى': 'الاشراف الفنى',
+    'technical supervisor': 'الاشراف الفنى',
+    'الإدارة الطالبة': 'الإدارة الطالبة',
+    'requesting dept': 'الإدارة الطالبة',
+    'الشركة المنفذة': 'الشركة المنفذة',
+    'contractor': 'الشركة المنفذة',
+    'نسبة صرف المهمات': 'نسبة صرف المهمات',
+    'material issue %': 'نسبة صرف المهمات',
+    'نسبة التنفيذ': 'نسبة التنفيذ',
+    'execution %': 'نسبة التنفيذ',
+    'po': 'PO',
+    'pr': 'PR'
+  };
+  
+  headers.forEach((header, index) => {
+    const normalized = header?.toString().toLowerCase().trim() || '';
+    const field = fieldMappings[normalized as keyof typeof fieldMappings];
+    if (field) {
+      mapping[field] = index;
+    }
+  });
+  
+  return mapping;
+}
+
+function parseRequirementRow(row: any[], columnMap: Record<string, number>, project_id: string): Omit<ProjectRequirement, 'id' | 'created_at' | 'updated_at'> {
+  const parsed: Omit<ProjectRequirement, 'id' | 'created_at' | 'updated_at'> = {
+    project_id,
+    item_code: '',
+    required_qty: 0,
+    withdrawn_qty: 0,
+    exclude_from_allocation: false,
+    notes: ''
+  };
+  
+  if (columnMap.item_code !== undefined && row[columnMap.item_code] !== undefined) {
+    parsed.item_code = String(row[columnMap.item_code]).trim();
+  }
+  
+  if (columnMap.required_qty !== undefined && row[columnMap.required_qty] !== undefined) {
+    const value = row[columnMap.required_qty];
+    if (typeof value === 'number') {
+      parsed.required_qty = value;
+    } else if (typeof value === 'string') {
+      const numValue = parseFloat(value.replace(/[^\d.-]/g, ''));
+      parsed.required_qty = isNaN(numValue) ? 0 : numValue;
+    }
+  }
+  
+  if (columnMap.withdrawn_qty !== undefined && row[columnMap.withdrawn_qty] !== undefined) {
+    const value = row[columnMap.withdrawn_qty];
+    if (typeof value === 'number') {
+      parsed.withdrawn_qty = value;
+    } else if (typeof value === 'string') {
+      const numValue = parseFloat(value.replace(/[^\d.-]/g, ''));
+      parsed.withdrawn_qty = isNaN(numValue) ? 0 : numValue;
+    }
+  }
+  
+  if (columnMap.exclude_from_allocation !== undefined && row[columnMap.exclude_from_allocation] !== undefined) {
+    const value = String(row[columnMap.exclude_from_allocation]).toLowerCase().trim();
+    parsed.exclude_from_allocation = ['true', '1', 'yes', 'نعم', 'y', 't'].includes(value);
+  }
+  
+  if (columnMap.notes !== undefined && row[columnMap.notes] !== undefined) {
+    parsed.notes = String(row[columnMap.notes]).trim();
+  }
+  
+  return parsed;
+}
+
+export async function exportProjectTemplate(project: any, requirements: ProjectRequirement[]): Promise<void> {
+  const wb = XLSX.utils.book_new();
+
+  // Requirements Sheet
+  const reqHeaders = [
+    'Item Code', 'Description', 'Required Qty', 'Withdrawn Qty', 'Exclude', 'Notes'
+  ];
+  
+  const reqData = [
+    reqHeaders,
+    ...requirements.map(req => [
+      req.item_code,
+      '', // Description will be filled from inventory
+      req.required_qty,
+      req.withdrawn_qty,
+      req.exclude_from_allocation ? 'TRUE' : 'FALSE',
+      req.notes || ''
+    ])
+  ];
+  
+  const reqWs = XLSX.utils.aoa_to_sheet(reqData);
+  XLSX.utils.book_append_sheet(wb, reqWs, 'Requirements');
+
+  // Metadata Sheet  
+  const metaHeaders = [
+    'اسم المشروع', 'رقم الرسم', 'تاريخ الرسم', 'رقم الحساب', 'بند الميزانية',
+    'رقم الاستثمارى', 'تاريخ الفتح', 'الاشراف الهندسى', 'الاشراف الفنى',
+    'الإدارة الطالبة', 'الشركة المنفذة', 'نسبة صرف المهمات', 'نسبة التنفيذ', 'PO', 'PR'
+  ];
+  
+  const metaData = [
+    metaHeaders,
+    metaHeaders.map(header => project.meta?.[header] || '')
+  ];
+  
+  const metaWs = XLSX.utils.aoa_to_sheet(metaData);
+  XLSX.utils.book_append_sheet(wb, metaWs, 'Metadata');
+
+  // Export file
+  XLSX.writeFile(wb, `project_${project.project_id}_template.xlsx`);
 }

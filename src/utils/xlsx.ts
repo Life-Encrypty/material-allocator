@@ -454,3 +454,10 @@ export async function exportProjectTemplate(project: any, requirements: ProjectR
   // Export file
   XLSX.writeFile(wb, `project_${project.project_id}_template.xlsx`);
 }
+
+export async function exportToExcel(data: any[], filename: string): Promise<void> {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(data);
+  XLSX.utils.book_append_sheet(wb, ws, 'Data');
+  XLSX.writeFile(wb, filename);
+}

@@ -56,6 +56,18 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => {
+    if (projects.length > 0) {
+      // Recompute aggregations when projects data is available
+      const computed = FakeApi.getComputedPerProject();
+      const inv = FakeApi.getCurrentInventory();
+      const mats = FakeApi.listMaterials();
+      
+      aggregateByItemCode(computed, inv, mats);
+      aggregateByProject(computed, projects);
+    }
+  }, [projects]);
+
+  useEffect(() => {
     filterAndSortData();
   }, [aggregatedItems, aggregatedProjects, searchQuery, showOnlyMissing, groupingMode, sortField, sortDirection]);
 

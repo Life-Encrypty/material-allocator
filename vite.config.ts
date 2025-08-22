@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
   return {
     base,
     build: {
-      assetsDir: "assets", // default, but explicit
+      assetsDir: mode === 'production' ? 'npc/material-allocator/assets' : 'assets',
     },
     server: {
       host: "::",

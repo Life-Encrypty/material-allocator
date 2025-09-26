@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Plus, GripVertical, Eye, Trash2, FolderOpen } from 'lucide-react';
+import { Plus, GripVertical, Eye, Trash2, FolderOpen, Download } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
@@ -15,6 +15,7 @@ import { ProjectSearchForm } from '@/components/ProjectSearchForm';
 import { BulkProjectImporter } from '@/components/BulkProjectImporter';
 import { toast } from 'sonner';
 import type { Project } from '@/domain/types';
+import * as XLSX from 'xlsx';
 
 interface SortableProjectProps {
   project: Project;
@@ -238,6 +239,52 @@ const Projects = () => {
 
   const stats = getProjectStats();
 
+  const handleDownloadTemplate = () => {
+    // Create empty requirements template with only headers
+    const requirementsTemplate = Array(15).fill(null).map(() => ({
+      'Item Code': '',
+      'Description': '',
+      'Required Qty': '',
+      'Withdrawn Qty': '',
+      'Exclude': '',
+      'Notes': ''
+    }));
+
+    // Create empty project metadata template with only headers
+    const metadataTemplate = Array(10).fill(null).map(() => ({
+      'اسم المشروع': '',
+      'رقم الرسم': '',
+      'تاريخ الرسم': '',
+      'رقم الحساب': '',
+      'بند الميزانية': '',
+      'رقم الاستثمارى': '',
+      'تاريخ الفتح': '',
+      'الاشراف الهندسى': '',
+      'الاشراف الفنى': '',
+      'الإدارة الطالبة': '',
+      'الشركة المنفذة': '',
+      'نسبة صرف المهمات': '',
+      'نسبة التنفيذ': '',
+      'PO': '',
+      'PR': ''
+    }));
+
+    // Create workbook with two worksheets
+    const wb = XLSX.utils.book_new();
+    
+    // Add requirements worksheet
+    const requirementsWs = XLSX.utils.json_to_sheet(requirementsTemplate);
+    XLSX.utils.book_append_sheet(wb, requirementsWs, 'Requirements');
+    
+    // Add metadata worksheet
+    const metadataWs = XLSX.utils.json_to_sheet(metadataTemplate);
+    XLSX.utils.book_append_sheet(wb, metadataWs, 'Metadata');
+    
+    // Generate and download the file
+    XLSX.writeFile(wb, 'project-requirements-template.xlsx');
+    toast.success('Empty project template downloaded');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -248,6 +295,13 @@ const Projects = () => {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            variant="outline"
+            onClick={handleDownloadTemplate}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Download Template
+          </Button>
           <Button 
             variant="outline"
             onClick={() => setShowBulkImporter(true)}

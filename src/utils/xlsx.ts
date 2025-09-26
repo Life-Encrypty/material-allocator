@@ -5,6 +5,7 @@ interface ParsedRow {
   item_code?: string;
   description?: string;
   unit?: string;
+  batch_number?: string;
   current_balance?: number;
 }
 
@@ -52,6 +53,7 @@ export async function parseInventory(file: File): Promise<InventorySnapshot> {
             id: `${snapshotId}_${index}`,
             snapshot_id: snapshotId,
             item_code: parsedRow.item_code.trim(),
+            batch_number: parsedRow.batch_number?.trim() || 'DEFAULT-BATCH',
             current_balance: parsedRow.current_balance || 0,
             location: '', // Default empty location
             notes: parsedRow.description || ''
@@ -105,6 +107,14 @@ function createColumnMapping(headers: string[]): Record<string, number> {
       mapping.item_code = index;
     }
     
+    // Map Batch Number or رقم الدفعة → batch_number
+    else if (normalizedHeader.includes('batch') || 
+             normalizedHeader.includes('رقم الدفعة') ||
+             normalizedHeader.includes('دفعة') ||
+             normalizedHeader === 'batch number') {
+      mapping.batch_number = index;
+    }
+    
     // Map Description or بيان المهمات → description  
     else if (normalizedHeader.includes('description') || 
              normalizedHeader.includes('بيان') ||
@@ -136,6 +146,10 @@ function parseRow(row: any[], columnMap: Record<string, number>): ParsedRow {
   
   if (columnMap.item_code !== undefined && row[columnMap.item_code] !== undefined) {
     parsed.item_code = String(row[columnMap.item_code]).trim();
+  }
+  
+  if (columnMap.batch_number !== undefined && row[columnMap.batch_number] !== undefined) {
+    parsed.batch_number = String(row[columnMap.batch_number]).trim();
   }
   
   if (columnMap.description !== undefined && row[columnMap.description] !== undefined) {

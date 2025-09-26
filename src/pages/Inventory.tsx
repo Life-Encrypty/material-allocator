@@ -45,6 +45,7 @@ const Inventory = () => {
       const material = materials.find(m => m.item_code === item.item_code)
       return {
         'Item Code': item.item_code,
+        'Batch Number': item.batch_number,
         'Description': material?.name || material?.description || '',
         'Unit': material?.unit || '',
         'Current Balance': item.current_balance,
@@ -171,6 +172,7 @@ const Inventory = () => {
 
   const filteredInventory = currentInventory.filter(item =>
     item.item_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item.batch_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (item.notes && item.notes.toLowerCase().includes(searchTerm.toLowerCase()))
   )
 
@@ -313,7 +315,7 @@ const Inventory = () => {
               {isUploading ? 'Uploading...' : 'Choose Excel File'}
             </Button>
             <p className="text-sm text-muted-foreground">
-              Supports columns: Item Code, Description, Unit, Current Balance (English/Arabic)
+              Supports columns: Item Code, Batch Number, Description, Unit, Current Balance (English/Arabic)
             </p>
           </div>
         </CardContent>
@@ -366,12 +368,12 @@ const Inventory = () => {
       <div className="flex items-center space-x-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by item code or notes..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-8"
-          />
+            <Input
+              placeholder="Search by item code, batch number, or notes..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8"
+            />
         </div>
       </div>
 
@@ -400,10 +402,15 @@ const Inventory = () => {
                 const stockStatus = getStockStatus(item.current_balance)
                 return (
                   <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-6 gap-4 items-center">
                       <div className="md:col-span-2">
                         <h3 className="font-medium">{item.item_code}</h3>
                         <p className="text-sm text-muted-foreground">{item.notes || 'No description'}</p>
+                      </div>
+                      
+                      <div className="text-center">
+                        <div className="text-sm font-medium">{item.batch_number}</div>
+                        <div className="text-xs text-muted-foreground">Batch</div>
                       </div>
                       
                       <div className="text-center">

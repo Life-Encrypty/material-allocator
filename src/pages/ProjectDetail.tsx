@@ -6,12 +6,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
-import { ArrowLeft, Plus, Trash2, Filter, Download, Upload, FileDown, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Filter, Download, Upload, FileDown, AlertTriangle, Zap } from 'lucide-react';
 import { FakeApi } from '@/api/FakeApi';
 import { ProjectMetadataPanel } from '@/components/ProjectMetadataPanel';
 import { ImportProjectModal } from '@/components/ImportProjectModal';
 import { SearchableCombobox } from '@/components/SearchableCombobox';
 import { OtherBatchesDialog } from '@/components/OtherBatchesDialog';
+import { AutoAllocationDialog } from '@/components/AutoAllocationDialog';
 import { toast } from 'sonner';
 import { exportProjectTemplate, type ProjectWorkbookResult } from '@/utils/xlsx';
 import type { Project, ProjectRequirement, Material, ProjectItemComputed, InventoryRow } from '@/domain/types';
@@ -31,6 +32,15 @@ const ProjectDetail = () => {
     itemCode: string;
     otherBatches: InventoryRow[];
   } | null>(null);
+  const [showAutoAllocationModal, setShowAutoAllocationModal] = useState(false);
+  const [allocationPreviews, setAllocationPreviews] = useState<Array<{
+    item_code: string;
+    description: string;
+    current_withdrawn: number;
+    allocatable_qty: number;
+    new_withdrawn: number;
+    change: number;
+  }>>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -327,6 +337,60 @@ const ProjectDetail = () => {
     }
   };
 
+  const handleAutoAllocation = () => {
+    if (!project || !id) return;
+
+    // Calculate allocation previews based on current computed data
+    const previews = requirements
+      .filter(req => !req.exclude_from_allocation && req.item_code)
+      .map(req => {
+        const computed = getComputedValues(req.item_code);
+        const allocatable = computed.allocatable_qty;
+        const currentWithdrawn = req.withdrawn_qty;
+        const newWithdrawn = Math.min(req.required_qty, currentWithdrawn + allocatable);
+        const change = newWithdrawn - currentWithdrawn;
+
+        return {
+          item_code: req.item_code,
+          description: getMaterialDescription(req.item_code),
+          current_withdrawn: currentWithdrawn,
+          allocatable_qty: allocatable,
+          new_withdrawn: newWithdrawn,
+          change: change
+        };
+      })
+      .filter(preview => preview.allocatable_qty > 0); // Only show items with available allocation
+
+    setAllocationPreviews(previews);
+    setShowAutoAllocationModal(true);
+  };
+
+  const handleConfirmAutoAllocation = async (allocations: typeof allocationPreviews) => {
+    if (!project) return;
+
+    let updatedCount = 0;
+
+    for (const allocation of allocations) {
+      if (allocation.change > 0) {
+        const requirement = requirements.find(req => req.item_code === allocation.item_code);
+        if (requirement) {
+          const updatedReq = { 
+            ...requirement, 
+            withdrawn_qty: allocation.new_withdrawn,
+            updated_at: new Date().toISOString()
+          };
+          FakeApi.upsertRequirement(updatedReq);
+          updatedCount++;
+        }
+      }
+    }
+
+    // Refresh data to get updated computed values
+    loadData();
+    
+    toast.success(`Auto allocation completed: ${updatedCount} items updated`);
+  };
+
   const onProjectUpdated = () => {
     if (!id) return;
     const projects = FakeApi.listProjects();
@@ -400,6 +464,15 @@ const ProjectDetail = () => {
           >
             <Filter className="h-4 w-4 mr-2" />
             {showMissingOnly ? 'Show All' : 'Only Missing > 0'}
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={handleAutoAllocation}
+            disabled={!project?.meta?.['بند الميزانية'] || requirements.filter(r => !r.exclude_from_allocation).length === 0}
+          >
+            <Zap className="h-4 w-4 mr-2" />
+            Auto Allocate
           </Button>
           <Button 
             variant="outline" 
@@ -619,6 +692,15 @@ const ProjectDetail = () => {
         onClose={() => setShowOtherBatchesModal(false)}
         itemCode={selectedItemForBatches?.itemCode || ''}
         otherBatches={selectedItemForBatches?.otherBatches || []}
+      />
+
+      {/* Auto Allocation Dialog */}
+      <AutoAllocationDialog
+        isOpen={showAutoAllocationModal}
+        onClose={() => setShowAutoAllocationModal(false)}
+        onConfirm={handleConfirmAutoAllocation}
+        allocations={allocationPreviews}
+        projectName={project.name}
       />
     </div>
   );

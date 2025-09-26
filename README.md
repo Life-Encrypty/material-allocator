@@ -270,10 +270,6 @@ material-allocator/
 - **File Processing**: XLSX parsing
 - **Deployment**: GitHub Actions, BunnyCDN
 
-## 📄 License
-
-This project is licensed under the MIT License.
-
 ## 🤝 Support
 
 For issues and questions:

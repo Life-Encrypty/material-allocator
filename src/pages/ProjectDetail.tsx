@@ -450,15 +450,11 @@ const ProjectDetail = () => {
                     />
                   </TableCell>
                   <TableCell>
-                    <SearchableCombobox
-                      options={getDescriptionOptions()}
-                      value={getMaterialDescription(req.item_code)}
-                      onValueChange={(value) => handleDescriptionSelect(value, req)}
-                      placeholder="Select description..."
-                      emptyText="No descriptions found."
-                      className="border-none p-1 h-auto min-w-[200px]"
-                      disabled={isExcluded}
-                    />
+                    <div className="text-sm text-foreground min-w-[200px] p-1">
+                      {getMaterialDescription(req.item_code) || 
+                        (req.item_code ? 'No description available' : 'Select an item code first')
+                      }
+                    </div>
                   </TableCell>
                   <TableCell>
                     {(() => {

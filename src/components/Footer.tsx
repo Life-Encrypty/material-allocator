@@ -17,9 +17,7 @@ const Footer = () => {
   const [isOpen, setIsOpen] = useState(false);
 
   const handleClearStorage = () => {
-    // Clear all localStorage data including initial snapshots
     localStorage.clear();
-    // Force a complete page reload to reset all state
     window.location.reload();
   };
 
@@ -38,7 +36,7 @@ const Footer = () => {
               <AlertDialogHeader>
                 <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This action cannot be undone. This will permanently delete all your local data including projects, inventory snapshots (including Initial Inventory), materials, and user preferences. The application will refresh after clearing.
+                  This action cannot be undone. This will permanently delete all your local data including projects, inventory, materials, and user preferences. The application will refresh after clearing.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

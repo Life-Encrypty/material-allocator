@@ -127,8 +127,14 @@ export const BulkProjectImporter = ({ isOpen, onClose, onImportComplete }: BulkP
         
         console.log('Found existing project:', existingProject ? { id: existingProject.project_id, name: existingProject.name } : 'None');
 
+        // Ensure new projects get a truly unique ID to avoid accidental overrides
+        const projectIdToUse = existingProject?.project_id || `prj-${crypto.randomUUID()}`;
+        if (!existingProject && results[resultIndex].projectId !== projectIdToUse) {
+          setResults(prev => prev.map((r, idx) => idx === resultIndex ? { ...r, projectId: projectIdToUse, projectName: actualProjectName } : r));
+        }
+
         const projectData: Project = {
-          project_id: existingProject?.project_id || results[resultIndex].projectId,
+          project_id: projectIdToUse,
           name: actualProjectName,
           priority: Math.floor(Math.random() * 100) + 1, // Random priority as requested
           status: existingProject?.status || 'Planning',

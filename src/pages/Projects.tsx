@@ -241,7 +241,7 @@ const Projects = () => {
 
   const handleDownloadTemplate = () => {
     // Create empty requirements template with only headers
-    const requirementsTemplate = Array(15).fill(null).map(() => ({
+    const requirementsTemplate = Array(10).fill(null).map(() => ({
       'Item Code': '',
       'Description': '',
       'Required Qty': '',
@@ -256,7 +256,7 @@ const Projects = () => {
       'رقم الرسم': '',
       'تاريخ الرسم': '',
       'رقم الحساب': '',
-      'بند الميزانية': '',
+      'بند الميزানية': '',
       'رقم الاستثمارى': '',
       'تاريخ الفتح': '',
       'الاشراف الهندسى': '',
@@ -269,20 +269,101 @@ const Projects = () => {
       'PR': ''
     }));
 
-    // Create workbook with two worksheets
+    // Create workbook
     const wb = XLSX.utils.book_new();
     
-    // Add requirements worksheet
+    // Requirements worksheet
     const requirementsWs = XLSX.utils.json_to_sheet(requirementsTemplate);
+    
+    // Style requirements headers
+    const reqHeaders = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1'];
+    reqHeaders.forEach(cell => {
+      if (!requirementsWs[cell]) requirementsWs[cell] = { t: 's', v: '' };
+      requirementsWs[cell].s = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "4472C4" } },
+        border: {
+          top: { style: "thin", color: { rgb: "000000" } },
+          bottom: { style: "thin", color: { rgb: "000000" } },
+          left: { style: "thin", color: { rgb: "000000" } },
+          right: { style: "thin", color: { rgb: "000000" } }
+        },
+        alignment: { horizontal: "center", vertical: "center" }
+      };
+    });
+
+    // Add borders to data rows (10 rows)
+    for (let row = 2; row <= 11; row++) {
+      for (let col = 0; col < 6; col++) {
+        const cellRef = XLSX.utils.encode_cell({ r: row - 1, c: col });
+        if (!requirementsWs[cellRef]) requirementsWs[cellRef] = { t: 's', v: '' };
+        requirementsWs[cellRef].s = {
+          border: {
+            top: { style: "thin", color: { rgb: "000000" } },
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } },
+            right: { style: "thin", color: { rgb: "000000" } }
+          }
+        };
+      }
+    }
+
+    // Set column widths for requirements
+    requirementsWs['!cols'] = [
+      { width: 15 }, // Item Code
+      { width: 40 }, // Description
+      { width: 12 }, // Required Qty
+      { width: 12 }, // Withdrawn Qty
+      { width: 10 }, // Exclude
+      { width: 30 }  // Notes
+    ];
+
     XLSX.utils.book_append_sheet(wb, requirementsWs, 'Requirements');
     
-    // Add metadata worksheet
+    // Metadata worksheet
     const metadataWs = XLSX.utils.json_to_sheet(metadataTemplate);
+    
+    // Style metadata headers - 15 columns (A1:O1)
+    const metaHeaders = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'I1', 'J1', 'K1', 'L1', 'M1', 'N1', 'O1'];
+    metaHeaders.forEach(cell => {
+      if (!metadataWs[cell]) metadataWs[cell] = { t: 's', v: '' };
+      metadataWs[cell].s = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "70AD47" } },
+        border: {
+          top: { style: "thin", color: { rgb: "000000" } },
+          bottom: { style: "thin", color: { rgb: "000000" } },
+          left: { style: "thin", color: { rgb: "000000" } },
+          right: { style: "thin", color: { rgb: "000000" } }
+        },
+        alignment: { horizontal: "center", vertical: "center" }
+      };
+    });
+
+    // Add borders to metadata data rows (10 rows)
+    for (let row = 2; row <= 11; row++) {
+      for (let col = 0; col < 15; col++) {
+        const cellRef = XLSX.utils.encode_cell({ r: row - 1, c: col });
+        if (!metadataWs[cellRef]) metadataWs[cellRef] = { t: 's', v: '' };
+        metadataWs[cellRef].s = {
+          border: {
+            top: { style: "thin", color: { rgb: "000000" } },
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } },
+            right: { style: "thin", color: { rgb: "000000" } }
+          }
+        };
+      }
+    }
+
+    // Set column widths for metadata
+    metadataWs['!cols'] = Array(15).fill({ width: 15 });
+
     XLSX.utils.book_append_sheet(wb, metadataWs, 'Metadata');
     
     // Generate and download the file
     XLSX.writeFile(wb, 'project-requirements-template.xlsx');
-    toast.success('Empty project template downloaded');
+    toast.success('Styled project template downloaded');
   };
 
   return (

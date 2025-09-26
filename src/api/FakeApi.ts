@@ -223,6 +223,16 @@ class FakeApiService {
       return false;
     });
   }
+
+  // Get item availability in other batches (excluding specified batch)
+  getItemAvailabilityInOtherBatches(itemCode: string, excludeBatch: string): InventoryRow[] {
+    const inventory = this.getCurrentInventory();
+    return inventory.filter(row => 
+      row.item_code === itemCode && 
+      row.batch_number !== excludeBatch &&
+      row.current_balance > 0
+    );
+  }
 }
 
 export const FakeApi = new FakeApiService();

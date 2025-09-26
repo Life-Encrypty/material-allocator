@@ -11,6 +11,7 @@ import { FakeApi } from '@/api/FakeApi';
 import { ProjectMetadataPanel } from '@/components/ProjectMetadataPanel';
 import { ImportProjectModal } from '@/components/ImportProjectModal';
 import { SearchableCombobox } from '@/components/SearchableCombobox';
+import { OtherBatchesDialog } from '@/components/OtherBatchesDialog';
 import { toast } from 'sonner';
 import { exportProjectTemplate, type ProjectWorkbookResult } from '@/utils/xlsx';
 import type { Project, ProjectRequirement, Material, ProjectItemComputed, InventoryRow } from '@/domain/types';
@@ -25,6 +26,11 @@ const ProjectDetail = () => {
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [showMissingOnly, setShowMissingOnly] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showOtherBatchesModal, setShowOtherBatchesModal] = useState(false);
+  const [selectedItemForBatches, setSelectedItemForBatches] = useState<{
+    itemCode: string;
+    otherBatches: InventoryRow[];
+  } | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -180,6 +186,29 @@ const ProjectDetail = () => {
   const handleItemCodeSelect = (item_code: string, requirement: ProjectRequirement) => {
     // Auto-fill description when item_code is selected
     updateRequirement(requirement, 'item_code', item_code);
+  };
+
+  const getOtherBatchesQuantity = (itemCode: string): number => {
+    if (!itemCode || !project?.meta?.['بند الميزانية']) return 0;
+    
+    const otherBatches = FakeApi.getItemAvailabilityInOtherBatches(
+      itemCode, 
+      project.meta['بند الميزانية']
+    );
+    
+    return otherBatches.reduce((sum, batch) => sum + batch.current_balance, 0);
+  };
+
+  const handleShowOtherBatches = (itemCode: string) => {
+    if (!itemCode || !project?.meta?.['بند الميزانية']) return;
+    
+    const otherBatches = FakeApi.getItemAvailabilityInOtherBatches(
+      itemCode, 
+      project.meta['بند الميزانية']
+    );
+    
+    setSelectedItemForBatches({ itemCode, otherBatches });
+    setShowOtherBatchesModal(true);
   };
 
   const exportToCSV = () => {
@@ -383,6 +412,7 @@ const ProjectDetail = () => {
               <TableHead>Item Code</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Available Batch</TableHead>
+              <TableHead>Other Batches</TableHead>
               <TableHead>Required Qty</TableHead>
               <TableHead>Withdrawn Qty</TableHead>
               <TableHead>Allocatable Qty</TableHead>
@@ -455,6 +485,27 @@ const ProjectDetail = () => {
                     })()}
                   </TableCell>
                   <TableCell>
+                    {(() => {
+                      const otherBatchesQty = getOtherBatchesQuantity(req.item_code);
+                      
+                      if (!req.item_code || otherBatchesQty === 0) {
+                        return <div className="text-xs text-muted-foreground">-</div>;
+                      }
+
+                      return (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleShowOtherBatches(req.item_code)}
+                          className="h-7 px-2 text-xs"
+                          disabled={isExcluded}
+                        >
+                          Check ({otherBatchesQty})
+                        </Button>
+                      );
+                    })()}
+                  </TableCell>
+                  <TableCell>
                     <Input
                       type="number"
                       value={req.required_qty}
@@ -510,7 +561,7 @@ const ProjectDetail = () => {
             })}
             {filteredRequirements.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                   {showMissingOnly ? 'No requirements with missing quantities' : 'No requirements found'}
                 </TableCell>
               </TableRow>
@@ -525,6 +576,14 @@ const ProjectDetail = () => {
         onClose={() => setShowImportModal(false)}
         onImport={handleImportProject}
         projectId={project.project_id}
+      />
+
+      {/* Other Batches Dialog */}
+      <OtherBatchesDialog
+        isOpen={showOtherBatchesModal}
+        onClose={() => setShowOtherBatchesModal(false)}
+        itemCode={selectedItemForBatches?.itemCode || ''}
+        otherBatches={selectedItemForBatches?.otherBatches || []}
       />
     </div>
   );

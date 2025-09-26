@@ -107,15 +107,18 @@ export const BulkProjectImporter = ({ isOpen, onClose, onImportComplete }: BulkP
       try {
         const data = await parseProjectWorkbook(file, results[resultIndex].projectId);
         
-        // Check if project exists
+        // Use project name from metadata sheet, fallback to filename
+        const actualProjectName = data.metadata['اسم المشروع'] || results[resultIndex].projectName;
+        
+        // Check if project exists using the actual project name from metadata
         const existingProjects = FakeApi.listProjects();
         const existingProject = existingProjects.find(p => 
-          p.name.toLowerCase() === results[resultIndex].projectName.toLowerCase()
+          p.name.toLowerCase() === actualProjectName.toLowerCase()
         );
 
         const projectData: Project = {
           project_id: existingProject?.project_id || results[resultIndex].projectId,
-          name: results[resultIndex].projectName,
+          name: actualProjectName,
           priority: Math.floor(Math.random() * 100) + 1, // Random priority as requested
           status: existingProject?.status || 'Planning',
           created_at: existingProject?.created_at || new Date().toISOString(),

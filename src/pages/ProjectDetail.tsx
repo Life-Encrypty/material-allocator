@@ -66,7 +66,7 @@ const ProjectDetail = () => {
 
   const getMaterialDescription = (itemCode: string): string => {
     const material = materials.find(m => m.item_code === itemCode);
-    return material?.description || '';
+    return material?.description || material?.name || '';
   };
 
   const getComputedValues = (itemCode: string) => {

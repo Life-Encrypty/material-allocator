@@ -65,7 +65,32 @@ const ProjectDetail = () => {
   };
 
   const getMaterialDescription = (itemCode: string): string => {
+    if (!itemCode) return '';
     const material = materials.find(m => m.item_code === itemCode);
+    
+    // If material not found, try to create it from inventory data
+    if (!material && itemCode) {
+      const inventoryItem = inventory.find(inv => inv.item_code === itemCode);
+      if (inventoryItem) {
+        // Create a placeholder material entry
+        const newMaterial: Material = {
+          item_code: itemCode,
+          name: `Item ${itemCode}`,
+          category: 'Imported',
+          unit: 'units',
+          description: `Material ${itemCode}`,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        // Add to API and local state
+        FakeApi.upsertMaterial(newMaterial);
+        setMaterials(prev => [...prev, newMaterial]);
+        
+        return newMaterial.description;
+      }
+    }
+    
     return material?.description || material?.name || '';
   };
 

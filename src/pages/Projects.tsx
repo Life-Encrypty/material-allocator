@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Plus, GripVertical, Eye, Trash2, FolderOpen } from 'lucide-react';
+import { Plus, GripVertical, Eye, Trash2, FolderOpen, Download } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
@@ -15,6 +15,7 @@ import { ProjectSearchForm } from '@/components/ProjectSearchForm';
 import { BulkProjectImporter } from '@/components/BulkProjectImporter';
 import { toast } from 'sonner';
 import type { Project } from '@/domain/types';
+import * as XLSX from 'xlsx';
 
 interface SortableProjectProps {
   project: Project;
@@ -238,6 +239,133 @@ const Projects = () => {
 
   const stats = getProjectStats();
 
+  const handleDownloadTemplate = () => {
+    // Create empty requirements template with only headers
+    const requirementsTemplate = Array(10).fill(null).map(() => ({
+      'Item Code': '',
+      'Description': '',
+      'Required Qty': '',
+      'Withdrawn Qty': '',
+      'Exclude': '',
+      'Notes': ''
+    }));
+
+    // Create empty project metadata template with only headers
+    const metadataTemplate = Array(10).fill(null).map(() => ({
+      'اسم المشروع': '',
+      'رقم الرسم': '',
+      'تاريخ الرسم': '',
+      'رقم الحساب': '',
+      'بند الميزানية': '',
+      'رقم الاستثمارى': '',
+      'تاريخ الفتح': '',
+      'الاشراف الهندسى': '',
+      'الاشراف الفنى': '',
+      'الإدارة الطالبة': '',
+      'الشركة المنفذة': '',
+      'نسبة صرف المهمات': '',
+      'نسبة التنفيذ': '',
+      'PO': '',
+      'PR': ''
+    }));
+
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+    
+    // Requirements worksheet
+    const requirementsWs = XLSX.utils.json_to_sheet(requirementsTemplate);
+    
+    // Style requirements headers
+    const reqHeaders = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1'];
+    reqHeaders.forEach(cell => {
+      if (!requirementsWs[cell]) requirementsWs[cell] = { t: 's', v: '' };
+      requirementsWs[cell].s = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "4472C4" } },
+        border: {
+          top: { style: "thin", color: { rgb: "000000" } },
+          bottom: { style: "thin", color: { rgb: "000000" } },
+          left: { style: "thin", color: { rgb: "000000" } },
+          right: { style: "thin", color: { rgb: "000000" } }
+        },
+        alignment: { horizontal: "center", vertical: "center" }
+      };
+    });
+
+    // Add borders to data rows (10 rows)
+    for (let row = 2; row <= 11; row++) {
+      for (let col = 0; col < 6; col++) {
+        const cellRef = XLSX.utils.encode_cell({ r: row - 1, c: col });
+        if (!requirementsWs[cellRef]) requirementsWs[cellRef] = { t: 's', v: '' };
+        requirementsWs[cellRef].s = {
+          border: {
+            top: { style: "thin", color: { rgb: "000000" } },
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } },
+            right: { style: "thin", color: { rgb: "000000" } }
+          }
+        };
+      }
+    }
+
+    // Set column widths for requirements
+    requirementsWs['!cols'] = [
+      { width: 15 }, // Item Code
+      { width: 40 }, // Description
+      { width: 12 }, // Required Qty
+      { width: 12 }, // Withdrawn Qty
+      { width: 10 }, // Exclude
+      { width: 30 }  // Notes
+    ];
+
+    XLSX.utils.book_append_sheet(wb, requirementsWs, 'Requirements');
+    
+    // Metadata worksheet
+    const metadataWs = XLSX.utils.json_to_sheet(metadataTemplate);
+    
+    // Style metadata headers - 15 columns (A1:O1)
+    const metaHeaders = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'I1', 'J1', 'K1', 'L1', 'M1', 'N1', 'O1'];
+    metaHeaders.forEach(cell => {
+      if (!metadataWs[cell]) metadataWs[cell] = { t: 's', v: '' };
+      metadataWs[cell].s = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "70AD47" } },
+        border: {
+          top: { style: "thin", color: { rgb: "000000" } },
+          bottom: { style: "thin", color: { rgb: "000000" } },
+          left: { style: "thin", color: { rgb: "000000" } },
+          right: { style: "thin", color: { rgb: "000000" } }
+        },
+        alignment: { horizontal: "center", vertical: "center" }
+      };
+    });
+
+    // Add borders to metadata data rows (10 rows)
+    for (let row = 2; row <= 11; row++) {
+      for (let col = 0; col < 15; col++) {
+        const cellRef = XLSX.utils.encode_cell({ r: row - 1, c: col });
+        if (!metadataWs[cellRef]) metadataWs[cellRef] = { t: 's', v: '' };
+        metadataWs[cellRef].s = {
+          border: {
+            top: { style: "thin", color: { rgb: "000000" } },
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } },
+            right: { style: "thin", color: { rgb: "000000" } }
+          }
+        };
+      }
+    }
+
+    // Set column widths for metadata
+    metadataWs['!cols'] = Array(15).fill({ width: 15 });
+
+    XLSX.utils.book_append_sheet(wb, metadataWs, 'Metadata');
+    
+    // Generate and download the file
+    XLSX.writeFile(wb, 'project-requirements-template.xlsx');
+    toast.success('Styled project template downloaded');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -248,6 +376,13 @@ const Projects = () => {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            variant="outline"
+            onClick={handleDownloadTemplate}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Download Template
+          </Button>
           <Button 
             variant="outline"
             onClick={() => setShowBulkImporter(true)}

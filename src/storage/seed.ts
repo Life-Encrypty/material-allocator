@@ -25,6 +25,9 @@ export function seedDatabase(): void {
       deadline: '2024-03-15',
       created_at: now,
       updated_at: now,
+      meta: {
+        'بند الميزانية': 'BATCH-001'
+      }
     },
     {
       project_id: 'P2',
@@ -35,6 +38,9 @@ export function seedDatabase(): void {
       deadline: '2024-04-01',
       created_at: now,
       updated_at: now,
+      meta: {
+        'بند الميزانية': 'BATCH-002'
+      }
     }
   ];
 
@@ -118,6 +124,7 @@ export function seedDatabase(): void {
       id: 'inv-1',
       snapshot_id: 'snap-initial',
       item_code: 'STL-001',
+      batch_number: 'BATCH-001',
       current_balance: 45,
       location: 'Warehouse A-1',
       notes: 'Good condition'
@@ -126,6 +133,7 @@ export function seedDatabase(): void {
       id: 'inv-2',
       snapshot_id: 'snap-initial',
       item_code: 'CON-001',
+      batch_number: 'BATCH-001',
       current_balance: 8,
       location: 'Storage B-3',
       notes: 'Low stock - reorder soon'
@@ -134,6 +142,7 @@ export function seedDatabase(): void {
       id: 'inv-3',
       snapshot_id: 'snap-initial',
       item_code: 'ELE-001',
+      batch_number: 'BATCH-002',
       current_balance: 156,
       location: 'Warehouse C-2',
       notes: 'Recently restocked'
@@ -142,6 +151,7 @@ export function seedDatabase(): void {
       id: 'inv-4',
       snapshot_id: 'snap-initial',
       item_code: 'ROF-001',
+      batch_number: 'BATCH-002',
       current_balance: 2340,
       location: 'Yard D-1',
       notes: 'Weather protected'
@@ -150,6 +160,7 @@ export function seedDatabase(): void {
       id: 'inv-5',
       snapshot_id: 'snap-initial',
       item_code: 'INS-001',
+      batch_number: 'BATCH-001',
       current_balance: 12,
       location: 'Storage A-4',
       notes: 'Temperature controlled'

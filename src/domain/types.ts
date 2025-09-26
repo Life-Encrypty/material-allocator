@@ -47,6 +47,7 @@ export interface InventoryRow {
   id: string;
   snapshot_id: string;
   item_code: string;
+  batch_number: string;
   current_balance: number;
   location?: string;
   notes?: string;

@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
-import { ArrowLeft, Plus, Trash2, Filter, Download, Upload, FileDown } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Filter, Download, Upload, FileDown, AlertTriangle } from 'lucide-react';
 import { FakeApi } from '@/api/FakeApi';
 import { ProjectMetadataPanel } from '@/components/ProjectMetadataPanel';
 import { ImportProjectModal } from '@/components/ImportProjectModal';
@@ -312,6 +312,21 @@ const ProjectDetail = () => {
       {/* Project Metadata Panel */}
       <ProjectMetadataPanel project={project} onProjectUpdated={onProjectUpdated} />
 
+      {/* Budget Item Warning */}
+      {!project.meta?.['بند الميزانية'] && (
+        <div className="bg-warning/10 border-l-4 border-l-warning p-4 rounded-lg">
+          <div className="flex items-center">
+            <AlertTriangle className="h-5 w-5 text-warning mr-2" />
+            <div>
+              <h3 className="font-medium text-warning">Budget Item Required</h3>
+              <p className="text-sm text-muted-foreground">
+                Set a budget item in project metadata to enable inventory allocation based on batch numbers.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
@@ -355,7 +370,7 @@ const ProjectDetail = () => {
           </Button>
         </div>
         <div className="text-sm text-muted-foreground">
-          {filteredRequirements.length} requirement(s)
+          {filteredRequirements.length} requirement(s) • Budget Item: <span className="font-medium">{project.meta?.['بند الميزانية'] || 'Not set'}</span>
         </div>
       </div>
 
@@ -367,6 +382,7 @@ const ProjectDetail = () => {
               <TableHead className="w-[80px]">Complete/Exclude</TableHead>
               <TableHead>Item Code</TableHead>
               <TableHead>Description</TableHead>
+              <TableHead>Available Batch</TableHead>
               <TableHead>Required Qty</TableHead>
               <TableHead>Withdrawn Qty</TableHead>
               <TableHead>Allocatable Qty</TableHead>
@@ -413,6 +429,30 @@ const ProjectDetail = () => {
                       className="border-none p-1 h-auto min-w-[200px]"
                       disabled={isExcluded}
                     />
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      const projectBudgetItem = project?.meta?.['بند الميزانية'];
+                      const matchingInventory = inventory.filter(inv => 
+                        inv.item_code === req.item_code && inv.batch_number === projectBudgetItem
+                      );
+                      const totalAvailable = matchingInventory.reduce((sum, inv) => sum + inv.current_balance, 0);
+                      
+                      return (
+                        <div className="text-sm">
+                          {projectBudgetItem ? (
+                            <div>
+                              <div className="font-medium">{projectBudgetItem}</div>
+                              <div className="text-xs text-muted-foreground">
+                                Available: {totalAvailable}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-xs text-muted-foreground">No budget item set</div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     <Input

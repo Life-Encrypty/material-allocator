@@ -110,11 +110,22 @@ export const BulkProjectImporter = ({ isOpen, onClose, onImportComplete }: BulkP
         // Use project name from metadata sheet, fallback to filename
         const actualProjectName = data.metadata['اسم المشروع'] || results[resultIndex].projectName;
         
+        console.log('BulkImport Debug:', {
+          filename: file.name,
+          metadataProjectName: data.metadata['اسم المشروع'],
+          actualProjectName,
+          filenameProjectName: results[resultIndex].projectName
+        });
+        
         // Check if project exists using the actual project name from metadata
         const existingProjects = FakeApi.listProjects();
+        console.log('Existing projects:', existingProjects.map(p => ({ id: p.project_id, name: p.name })));
+        
         const existingProject = existingProjects.find(p => 
           p.name.toLowerCase() === actualProjectName.toLowerCase()
         );
+        
+        console.log('Found existing project:', existingProject ? { id: existingProject.project_id, name: existingProject.name } : 'None');
 
         const projectData: Project = {
           project_id: existingProject?.project_id || results[resultIndex].projectId,

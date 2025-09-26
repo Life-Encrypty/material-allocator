@@ -240,40 +240,88 @@ const Projects = () => {
   const stats = getProjectStats();
 
   const handleDownloadTemplate = () => {
-    // Create template data with sample structure
-    const templateData = [
+    // Create project requirements template with sample data structure
+    const requirementsTemplate = [
       {
-        'Project ID': 'PROJ-001',
-        'Project Name': 'Sample Project',
-        'Description': 'This is a sample project description',
-        'Status': 'Planning',
-        'Priority': 1,
-        'اسم المشروع': 'مشروع نموذجي',
-        'Requirements': 'REQ-001,REQ-002',
-        'Requirements Description': 'Sample requirement 1,Sample requirement 2'
+        'Item Code': '50017309',
+        'Description': 'PIPE MET A106-B DRL 11.13MM SCH40 DN350',
+        'Required Qty': 12,
+        'Withdrawn Qty': 0,
+        'Exclude': false,
+        'Notes': 'Sample pipe requirement'
       },
       {
-        'Project ID': 'PROJ-002', 
-        'Project Name': 'Another Project',
-        'Description': 'Another sample project',
-        'Status': 'In Progress',
-        'Priority': 2,
-        'اسم المشروع': 'مشروع آخر',
-        'Requirements': 'REQ-003',
-        'Requirements Description': 'Another sample requirement'
-      }
+        'Item Code': '50001603',
+        'Description': 'ELB 90DEG BW WPB LR SCH40 DN350 14"',
+        'Required Qty': 4,
+        'Withdrawn Qty': 0,
+        'Exclude': false,
+        'Notes': 'Sample elbow requirement'
+      },
+      // Add empty rows for user to fill
+      ...Array(10).fill(null).map(() => ({
+        'Item Code': '',
+        'Description': '',
+        'Required Qty': 0,
+        'Withdrawn Qty': 0,
+        'Exclude': false,
+        'Notes': ''
+      }))
     ];
 
-    // Create workbook and worksheet
+    // Create project metadata template
+    const metadataTemplate = [
+      {
+        'اسم المشروع': '',
+        'رقم الرسم': '',
+        'تاريخ الرسم': '',
+        'رقم الحساب': '',
+        'بند الميزانية': '',
+        'رقم الاستثمارى': '',
+        'تاريخ الفتح': '',
+        'الاشراف الهندسى': '',
+        'الاشراف الفنى': '',
+        'الإدارة الطالبة': '',
+        'الشركة المنفذة': '',
+        'نسبة صرف المهمات': '',
+        'نسبة التنفيذ': '',
+        'PO': '',
+        'PR': ''
+      },
+      // Add empty rows
+      ...Array(8).fill(null).map(() => ({
+        'اسم المشروع': '',
+        'رقم الرسم': '',
+        'تاريخ الرسم': '',
+        'رقم الحساب': '',
+        'بند الميزانية': '',
+        'رقم الاستثمارى': '',
+        'تاريخ الفتح': '',
+        'الاشراف الهندسى': '',
+        'الاشراف الفنى': '',
+        'الإدارة الطالبة': '',
+        'الشركة المنفذة': '',
+        'نسبة صرف المهمات': '',
+        'نسبة التنفيذ': '',
+        'PO': '',
+        'PR': ''
+      }))
+    ];
+
+    // Create workbook with two worksheets
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(templateData);
     
-    // Add the worksheet to the workbook
-    XLSX.utils.book_append_sheet(wb, ws, 'Projects');
+    // Add requirements worksheet
+    const requirementsWs = XLSX.utils.json_to_sheet(requirementsTemplate);
+    XLSX.utils.book_append_sheet(wb, requirementsWs, 'Requirements');
+    
+    // Add metadata worksheet
+    const metadataWs = XLSX.utils.json_to_sheet(metadataTemplate);
+    XLSX.utils.book_append_sheet(wb, metadataWs, 'Metadata');
     
     // Generate and download the file
-    XLSX.writeFile(wb, 'project-template.xlsx');
-    toast.success('Template downloaded successfully');
+    XLSX.writeFile(wb, 'project-requirements-template.xlsx');
+    toast.success('Project requirements template downloaded');
   };
 
   return (

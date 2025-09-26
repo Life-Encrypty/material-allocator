@@ -66,32 +66,27 @@ const ProjectDetail = () => {
 
   const getMaterialDescription = (itemCode: string): string => {
     if (!itemCode) return '';
-    const material = materials.find(m => m.item_code === itemCode);
     
-    // If material not found, try to create it from inventory data
-    if (!material && itemCode) {
-      const inventoryItem = inventory.find(inv => inv.item_code === itemCode);
-      if (inventoryItem) {
-        // Create a placeholder material entry
-        const newMaterial: Material = {
-          item_code: itemCode,
-          name: `Item ${itemCode}`,
-          category: 'Imported',
-          unit: 'units',
-          description: `Material ${itemCode}`,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        
-        // Add to API and local state
-        FakeApi.upsertMaterial(newMaterial);
-        setMaterials(prev => [...prev, newMaterial]);
-        
-        return newMaterial.description;
-      }
+    // First try to find the material in the materials database
+    const material = materials.find(m => m.item_code === itemCode);
+    if (material && (material.description || material.name)) {
+      return material.description || material.name;
     }
     
-    return material?.description || material?.name || '';
+    // If not found in materials, look in inventory for the description
+    const inventoryItem = inventory.find(inv => inv.item_code === itemCode);
+    if (inventoryItem) {
+      // Try to find a material that might have been created from this inventory item
+      const existingMaterial = materials.find(m => m.item_code === itemCode);
+      if (existingMaterial) {
+        return existingMaterial.description || existingMaterial.name || '';
+      }
+      
+      // Return empty string for now, let the actual description come from the proper data source
+      return '';
+    }
+    
+    return '';
   };
 
   const getComputedValues = (itemCode: string) => {
@@ -156,17 +151,26 @@ const ProjectDetail = () => {
 
   const getInventoryOptions = () => {
     const options: Array<{ value: string; label: string; subtitle?: string }> = [];
+    const uniqueItemCodes = new Set<string>();
     
     // Add items from current inventory only (active snapshot)
     inventory.forEach(row => {
-      const material = materials.find(m => m.item_code === row.item_code);
-      const description = material?.description || material?.name || '';
-      
-      options.push({
-        value: row.item_code,
-        label: row.item_code,
-        subtitle: description
-      });
+      if (!uniqueItemCodes.has(row.item_code)) {
+        uniqueItemCodes.add(row.item_code);
+        
+        // Try materials first, then inventory notes
+        const material = materials.find(m => m.item_code === row.item_code);
+        let description = material?.description || material?.name || '';
+        if (!description) {
+          description = row.notes || '';
+        }
+        
+        options.push({
+          value: row.item_code,
+          label: row.item_code,
+          subtitle: description
+        });
+      }
     });
     
     return options;
@@ -476,9 +480,19 @@ const ProjectDetail = () => {
                   </TableCell>
                   <TableCell>
                     <div className="text-sm text-foreground min-w-[200px] p-1">
-                      {getMaterialDescription(req.item_code) || 
-                        (req.item_code ? 'No description available' : 'Select an item code first')
-                      }
+                      {(() => {
+                        // First try materials table
+                        const material = materials.find(m => m.item_code === req.item_code);
+                        let description = material?.description || material?.name || '';
+                        
+                        // If no description in materials, check inventory notes
+                        if (!description && req.item_code) {
+                          const inventoryItem = inventory.find(inv => inv.item_code === req.item_code);
+                          description = inventoryItem?.notes || '';
+                        }
+                        
+                        return description || (req.item_code ? 'No description available' : 'Select an item code first');
+                      })()}
                     </div>
                   </TableCell>
                   <TableCell>

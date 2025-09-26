@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Plus, GripVertical, Eye, Trash2, FolderOpen } from 'lucide-react';
+import { Plus, GripVertical, Eye, Trash2, FolderOpen, Download } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
@@ -15,6 +15,7 @@ import { ProjectSearchForm } from '@/components/ProjectSearchForm';
 import { BulkProjectImporter } from '@/components/BulkProjectImporter';
 import { toast } from 'sonner';
 import type { Project } from '@/domain/types';
+import * as XLSX from 'xlsx';
 
 interface SortableProjectProps {
   project: Project;
@@ -238,6 +239,43 @@ const Projects = () => {
 
   const stats = getProjectStats();
 
+  const handleDownloadTemplate = () => {
+    // Create template data with sample structure
+    const templateData = [
+      {
+        'Project ID': 'PROJ-001',
+        'Project Name': 'Sample Project',
+        'Description': 'This is a sample project description',
+        'Status': 'Planning',
+        'Priority': 1,
+        'اسم المشروع': 'مشروع نموذجي',
+        'Requirements': 'REQ-001,REQ-002',
+        'Requirements Description': 'Sample requirement 1,Sample requirement 2'
+      },
+      {
+        'Project ID': 'PROJ-002', 
+        'Project Name': 'Another Project',
+        'Description': 'Another sample project',
+        'Status': 'In Progress',
+        'Priority': 2,
+        'اسم المشروع': 'مشروع آخر',
+        'Requirements': 'REQ-003',
+        'Requirements Description': 'Another sample requirement'
+      }
+    ];
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    
+    // Add the worksheet to the workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Projects');
+    
+    // Generate and download the file
+    XLSX.writeFile(wb, 'project-template.xlsx');
+    toast.success('Template downloaded successfully');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -248,6 +286,13 @@ const Projects = () => {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            variant="outline"
+            onClick={handleDownloadTemplate}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Download Template
+          </Button>
           <Button 
             variant="outline"
             onClick={() => setShowBulkImporter(true)}

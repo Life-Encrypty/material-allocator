@@ -118,7 +118,7 @@ export type Database = {
           created_at: string
           exclude_from_allocation: boolean
           id: string
-          item_code: string
+          item_code: string | null
           notes: string | null
           project_id: string
           required_qty: number
@@ -129,7 +129,7 @@ export type Database = {
           created_at?: string
           exclude_from_allocation?: boolean
           id?: string
-          item_code: string
+          item_code?: string | null
           notes?: string | null
           project_id: string
           required_qty?: number
@@ -140,7 +140,7 @@ export type Database = {
           created_at?: string
           exclude_from_allocation?: boolean
           id?: string
-          item_code?: string
+          item_code?: string | null
           notes?: string | null
           project_id?: string
           required_qty?: number

@@ -179,7 +179,7 @@ const ProjectDetail = () => {
     try {
       const newReqInput = {
         project_id: project.project_id,
-        item_code: '',
+        item_code: null as any, // Nullable - user will fill it in
         required_qty: 0,
         withdrawn_qty: 0,
         exclude_from_allocation: false,

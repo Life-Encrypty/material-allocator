@@ -7,6 +7,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from '@/hooks/use-toast'
 import { Plus, Search, Package, AlertTriangle, TrendingUp, TrendingDown, Upload, FileSpreadsheet, Trash2, Download } from 'lucide-react'
 import { SupabaseApi } from '@/api/SupabaseApi'
+import { useRealtimeInventory } from '@/hooks/useRealtimeInventory'
 import { parseInventory } from '@/utils/xlsx'
 import { K } from '@/storage/keys'
 import type { InventorySnapshot, InventoryRow, Material } from '@/domain/types'
@@ -22,6 +23,20 @@ const Inventory = () => {
   const [showClearDialog, setShowClearDialog] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+
+  // Realtime inventory updates
+  useRealtimeInventory({
+    snapshotId: activeSnapshotId,
+    onInsert: (row) => {
+      setCurrentInventory(prev => [...prev, row]);
+    },
+    onUpdate: (row) => {
+      setCurrentInventory(prev => prev.map(r => r.id === row.id ? row : r));
+    },
+    onDelete: (rowId) => {
+      setCurrentInventory(prev => prev.filter(r => r.id !== rowId));
+    }
+  });
 
   // Load data on component mount
   useEffect(() => {

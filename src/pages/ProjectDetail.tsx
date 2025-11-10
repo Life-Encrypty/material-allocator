@@ -13,6 +13,7 @@ import { ImportProjectModal } from '@/components/ImportProjectModal';
 import { SearchableCombobox } from '@/components/SearchableCombobox';
 import { OtherBatchesDialog } from '@/components/OtherBatchesDialog';
 import { AutoAllocationDialog } from '@/components/AutoAllocationDialog';
+import { useRealtimeRequirements } from '@/hooks/useRealtimeRequirements';
 import { toast } from 'sonner';
 import { exportProjectTemplate, type ProjectWorkbookResult } from '@/utils/xlsx';
 import type { Project, ProjectRequirement, Material, ProjectItemComputed, InventoryRow } from '@/domain/types';
@@ -42,6 +43,23 @@ const ProjectDetail = () => {
     new_withdrawn: number;
     change: number;
   }>>([]);
+
+  // Realtime requirements updates
+  useRealtimeRequirements({
+    projectId: id,
+    onInsert: (requirement) => {
+      setRequirements(prev => [...prev, requirement]);
+      loadData(); // Reload to update computed values
+    },
+    onUpdate: (requirement) => {
+      setRequirements(prev => prev.map(r => r.id === requirement.id ? requirement : r));
+      loadData(); // Reload to update computed values
+    },
+    onDelete: (requirementId) => {
+      setRequirements(prev => prev.filter(r => r.id !== requirementId));
+      loadData(); // Reload to update computed values
+    }
+  });
 
   useEffect(() => {
     if (!id) return;
@@ -245,17 +263,6 @@ const ProjectDetail = () => {
   const handleItemCodeSelect = (item_code: string, requirement: ProjectRequirement) => {
     // Auto-fill description when item_code is selected
     updateRequirement(requirement, 'item_code', item_code);
-  };
-
-  const getOtherBatchesQuantity = async (itemCode: string): Promise<number> => {
-    if (!itemCode || !project?.meta?.['بند الميزانية']) return 0;
-    
-    const otherBatches = await SupabaseApi.getItemAvailabilityInOtherBatches(
-      itemCode, 
-      project.meta['بند الميزانية']
-    );
-    
-    return otherBatches.reduce((sum, batch) => sum + batch.current_balance, 0);
   };
 
   const handleShowOtherBatches = async (itemCode: string) => {

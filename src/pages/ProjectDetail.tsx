@@ -168,23 +168,36 @@ const ProjectDetail = () => {
   };
 
   const addRequirement = async () => {
-    if (!project) return;
+    console.log('Add Row button clicked');
     
-    const newReq: ProjectRequirement = {
-      id: `req_${Date.now()}`,
-      project_id: project.project_id,
-      item_code: '',
-      required_qty: 0,
-      withdrawn_qty: 0,
-      exclude_from_allocation: false,
-      notes: '',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
+    if (!project) {
+      console.error('No project found');
+      toast.error('Project not loaded');
+      return;
+    }
     
-    await SupabaseApi.upsertRequirement(newReq);
-    await loadData();
-    toast.success('Requirement added');
+    try {
+      const newReq: ProjectRequirement = {
+        id: `req_${Date.now()}`,
+        project_id: project.project_id,
+        item_code: '',
+        required_qty: 0,
+        withdrawn_qty: 0,
+        exclude_from_allocation: false,
+        notes: '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
+      console.log('Creating requirement:', newReq);
+      await SupabaseApi.upsertRequirement(newReq);
+      await loadData();
+      toast.success('Requirement added');
+      console.log('Requirement added successfully');
+    } catch (error) {
+      console.error('Error adding requirement:', error);
+      toast.error('Failed to add requirement');
+    }
   };
 
   const deleteRequirement = async (reqId: string) => {

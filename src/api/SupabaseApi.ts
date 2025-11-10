@@ -99,6 +99,17 @@ class SupabaseApiService {
     }
   }
 
+  async createRequirement(input: Omit<ProjectRequirement, 'id' | 'created_at' | 'updated_at'>): Promise<void> {
+    const { error } = await supabase
+      .from('project_requirements')
+      .insert(input);
+    
+    if (error) {
+      console.error('Error creating requirement:', error);
+      throw error;
+    }
+  }
+
   async deleteRequirement(requirementId: string): Promise<void> {
     const { error } = await supabase
       .from('project_requirements')

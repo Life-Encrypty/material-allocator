@@ -177,20 +177,17 @@ const ProjectDetail = () => {
     }
     
     try {
-      const newReq: ProjectRequirement = {
-        id: `req_${Date.now()}`,
+      const newReqInput = {
         project_id: project.project_id,
         item_code: '',
         required_qty: 0,
         withdrawn_qty: 0,
         exclude_from_allocation: false,
-        notes: '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        notes: ''
       };
       
-      console.log('Creating requirement:', newReq);
-      await SupabaseApi.upsertRequirement(newReq);
+      console.log('Creating requirement:', newReqInput);
+      await SupabaseApi.createRequirement(newReqInput);
       await loadData();
       toast.success('Requirement added');
       console.log('Requirement added successfully');
@@ -334,14 +331,17 @@ const ProjectDetail = () => {
       const existing = requirements.find(r => r.item_code === reqData.item_code);
       const timestamp = new Date().toISOString();
       
-      const requirement: ProjectRequirement = {
-        id: existing?.id || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        ...reqData,
-        created_at: existing?.created_at || timestamp,
-        updated_at: timestamp
-      };
-      
-      await SupabaseApi.upsertRequirement(requirement);
+      if (existing) {
+        const requirement: ProjectRequirement = {
+          ...existing,
+          ...reqData,
+          updated_at: timestamp
+        };
+        
+        await SupabaseApi.upsertRequirement(requirement);
+      } else {
+        await SupabaseApi.createRequirement(reqData);
+      }
     }
 
     // Import metadata (handle [CLEAR] markers)

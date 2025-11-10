@@ -7,7 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Upload, AlertTriangle, CheckCircle, FileText, X, FolderOpen } from 'lucide-react';
 import { parseProjectWorkbook, type ProjectWorkbookResult } from '@/utils/xlsx';
-import { FakeApi } from '@/api/FakeApi';
+import { SupabaseApi } from '@/api/SupabaseApi';
 import { Project } from '@/domain/types';
 import { toast } from 'sonner';
 
@@ -118,7 +118,7 @@ export const BulkProjectImporter = ({ isOpen, onClose, onImportComplete }: BulkP
         });
         
         // Check if project exists using the actual project name from metadata
-        const existingProjects = FakeApi.listProjects();
+        const existingProjects = await SupabaseApi.listProjects();
         console.log('Existing projects:', existingProjects.map(p => ({ id: p.project_id, name: p.name })));
         
         const existingProject = existingProjects.find(p => 
@@ -146,26 +146,28 @@ export const BulkProjectImporter = ({ isOpen, onClose, onImportComplete }: BulkP
         };
 
         // Upsert project
-        FakeApi.upsertProject(projectData);
+        await SupabaseApi.upsertProject(projectData);
 
         // Clear existing requirements if updating
         if (existingProject) {
-          const existingRequirements = FakeApi.listRequirements().filter(
+          const existingRequirements = (await SupabaseApi.listRequirements()).filter(
             req => req.project_id === existingProject.project_id
           );
-          existingRequirements.forEach(req => FakeApi.deleteRequirement(req.id));
+          for (const req of existingRequirements) {
+            await SupabaseApi.deleteRequirement(req.id);
+          }
         }
 
         // Add new requirements
-        data.requirements.forEach(req => {
-          FakeApi.upsertRequirement({
+        for (const req of data.requirements) {
+          await SupabaseApi.upsertRequirement({
             ...req,
             id: crypto.randomUUID(),
             project_id: projectData.project_id,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           });
-        });
+        }
 
         setResults(prev => prev.map((result, idx) => 
           idx === resultIndex ? { 

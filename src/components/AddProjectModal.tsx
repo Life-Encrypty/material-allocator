@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FakeApi } from '@/api/FakeApi';
+import { SupabaseApi } from '@/api/SupabaseApi';
 import { toast } from 'sonner';
 import type { Project } from '@/domain/types';
 
@@ -34,7 +34,7 @@ const AddProjectModal = ({ open, onOpenChange, onProjectAdded }: AddProjectModal
     }
 
     // Check if project ID already exists
-    const existingProjects = FakeApi.listProjects();
+    const existingProjects = await SupabaseApi.listProjects();
     if (existingProjects.some(p => p.project_id === formData.project_id)) {
       toast.error('Project ID already exists');
       return;
@@ -53,7 +53,7 @@ const AddProjectModal = ({ open, onOpenChange, onProjectAdded }: AddProjectModal
         updated_at: new Date().toISOString()
       };
 
-      FakeApi.upsertProject(newProject);
+      await SupabaseApi.upsertProject(newProject);
       
       toast.success('Project created successfully');
       onProjectAdded();

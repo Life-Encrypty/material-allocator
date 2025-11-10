@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
 import { Plus, Search, Package, AlertTriangle, TrendingUp, TrendingDown, Upload, FileSpreadsheet, Trash2, Download } from 'lucide-react'
-import { FakeApi } from '@/api/FakeApi'
+import { SupabaseApi } from '@/api/SupabaseApi'
 import { parseInventory } from '@/utils/xlsx'
 import { K } from '@/storage/keys'
 import type { InventorySnapshot, InventoryRow, Material } from '@/domain/types'
@@ -28,18 +28,18 @@ const Inventory = () => {
     loadInventoryData()
   }, [])
 
-  const loadInventoryData = () => {
-    const snapshotsList = FakeApi.listSnapshots()
-    const activeId = FakeApi.getActiveSnapshotId()
-    const inventory = FakeApi.getCurrentInventory()
+  const loadInventoryData = async () => {
+    const snapshotsList = await SupabaseApi.listSnapshots();
+    const activeId = await SupabaseApi.getActiveSnapshotId();
+    const inventory = await SupabaseApi.getCurrentInventory();
     
-    setSnapshots(snapshotsList)
-    setActiveSnapshotId(activeId)
-    setCurrentInventory(inventory)
-  }
+    setSnapshots(snapshotsList);
+    setActiveSnapshotId(activeId);
+    setCurrentInventory(inventory);
+  };
 
-  const downloadInventoryFile = () => {
-    const materials = FakeApi.listMaterials()
+  const downloadInventoryFile = async () => {
+    const materials = await SupabaseApi.listMaterials();
     
     const csvData = currentInventory.map(item => {
       const material = materials.find(m => m.item_code === item.item_code)
@@ -94,14 +94,12 @@ const Inventory = () => {
     try {
       const snapshot = await parseInventory(file)
       
-      // Save snapshot and rows to localStorage
-      FakeApi.setActiveSnapshot(snapshot)
+      // Save snapshot and rows to Supabase
+      await SupabaseApi.setActiveSnapshot(snapshot)
       
       // Save inventory rows
       const rows = (snapshot as any).rows as InventoryRow[]
-      rows.forEach(row => {
-        FakeApi.upsertInventoryRow(row)
-      })
+      await SupabaseApi.upsertInventoryRows(rows)
       
       // Reload data
       loadInventoryData()
@@ -132,12 +130,12 @@ const Inventory = () => {
     setShowConfirmDialog(true)
   }
 
-  const confirmSnapshotChange = () => {
+  const confirmSnapshotChange = async () => {
     if (pendingSnapshotId) {
       const snapshot = snapshots.find(s => s.snapshot_id === pendingSnapshotId)
       if (snapshot) {
-        FakeApi.setActiveSnapshot(snapshot)
-        loadInventoryData()
+        await SupabaseApi.setActiveSnapshot(snapshot)
+        await loadInventoryData()
         
         toast({
           title: "Active snapshot changed",

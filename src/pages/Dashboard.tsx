@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BarChart3, Package, AlertTriangle, TrendingUp, Search, Filter, Download, ArrowUpDown } from 'lucide-react';
-import { FakeApi } from '@/api/FakeApi';
+import { SupabaseApi } from '@/api/SupabaseApi';
 import { exportToExcel } from '@/utils/xlsx';
 import type { ProjectItemComputed, InventoryRow, Material, Project } from '@/domain/types';
 
@@ -58,12 +58,15 @@ const Dashboard = () => {
   useEffect(() => {
     if (projects.length > 0) {
       // Recompute aggregations when projects data is available
-      const computed = FakeApi.getComputedPerProject();
-      const inv = FakeApi.getCurrentInventory();
-      const mats = FakeApi.listMaterials();
-      
-      aggregateByItemCode(computed, inv, mats);
-      aggregateByProject(computed, projects);
+      const recomputeData = async () => {
+        const computed = await SupabaseApi.getComputedPerProject();
+        const inv = await SupabaseApi.getCurrentInventory();
+        const mats = await SupabaseApi.listMaterials();
+        
+        aggregateByItemCode(computed, inv, mats);
+        aggregateByProject(computed, projects);
+      };
+      recomputeData();
     }
   }, [projects]);
 
@@ -71,11 +74,11 @@ const Dashboard = () => {
     filterAndSortData();
   }, [aggregatedItems, aggregatedProjects, searchQuery, showOnlyMissing, groupingMode, sortField, sortDirection]);
 
-  const loadData = () => {
-    const computed = FakeApi.getComputedPerProject();
-    const inv = FakeApi.getCurrentInventory();
-    const mats = FakeApi.listMaterials();
-    const projs = FakeApi.listProjects();
+  const loadData = async () => {
+    const computed = await SupabaseApi.getComputedPerProject();
+    const inv = await SupabaseApi.getCurrentInventory();
+    const mats = await SupabaseApi.listMaterials();
+    const projs = await SupabaseApi.listProjects();
     
     setComputedData(computed);
     setInventory(inv);

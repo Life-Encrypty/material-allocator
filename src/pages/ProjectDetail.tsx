@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
 import { ArrowLeft, Plus, Trash2, Filter, Download, Upload, FileDown, AlertTriangle, Zap } from 'lucide-react';
-import { FakeApi } from '@/api/FakeApi';
+import { SupabaseApi } from '@/api/SupabaseApi';
 import { ProjectMetadataPanel } from '@/components/ProjectMetadataPanel';
 import { ImportProjectModal } from '@/components/ImportProjectModal';
 import { SearchableCombobox } from '@/components/SearchableCombobox';
@@ -32,6 +32,7 @@ const ProjectDetail = () => {
     itemCode: string;
     otherBatches: InventoryRow[];
   } | null>(null);
+  const [otherBatchesQuantities, setOtherBatchesQuantities] = useState<Record<string, number>>({});
   const [showAutoAllocationModal, setShowAutoAllocationModal] = useState(false);
   const [allocationPreviews, setAllocationPreviews] = useState<Array<{
     item_code: string;
@@ -46,32 +47,51 @@ const ProjectDetail = () => {
     if (!id) return;
     
     // Load project
-    const projects = FakeApi.listProjects();
-    const foundProject = projects.find(p => p.project_id === id);
-    if (!foundProject) {
-      navigate('/projects');
-      return;
-    }
-    setProject(foundProject);
+    const loadProject = async () => {
+      const projects = await SupabaseApi.listProjects();
+      const foundProject = projects.find(p => p.project_id === id);
+      if (!foundProject) {
+        navigate('/projects');
+        return;
+      }
+      setProject(foundProject);
 
-    // Load data
-    loadData();
+      // Load data
+      await loadData();
+    };
+    
+    loadProject();
   }, [id, navigate]);
 
-  const loadData = () => {
+  const loadData = async () => {
     if (!id) return;
     
-    const reqs = FakeApi.listRequirements().filter(r => r.project_id === id);
+    const reqs = (await SupabaseApi.listRequirements()).filter(r => r.project_id === id);
     setRequirements(reqs);
     
-    const mats = FakeApi.listMaterials();
+    const mats = await SupabaseApi.listMaterials();
     setMaterials(mats);
     
-    const inv = FakeApi.getCurrentInventory();
+    const inv = await SupabaseApi.getCurrentInventory();
     setInventory(inv);
     
-    const computed = FakeApi.getComputedPerProject().filter(c => c.project_id === id);
+    const computed = (await SupabaseApi.getComputedPerProject()).filter(c => c.project_id === id);
     setComputedData(computed);
+    
+    // Compute other batches quantities for all items
+    if (project?.meta?.['بند الميزانية']) {
+      const quantities: Record<string, number> = {};
+      for (const req of reqs) {
+        if (req.item_code) {
+          const otherBatches = await SupabaseApi.getItemAvailabilityInOtherBatches(
+            req.item_code,
+            project.meta['بند الميزانية']
+          );
+          quantities[req.item_code] = otherBatches.reduce((sum, batch) => sum + batch.current_balance, 0);
+        }
+      }
+      setOtherBatchesQuantities(quantities);
+    }
   };
 
   const getMaterialDescription = (itemCode: string): string => {
@@ -107,7 +127,7 @@ const ProjectDetail = () => {
     };
   };
 
-  const updateRequirement = (requirement: ProjectRequirement, field: keyof ProjectRequirement, value: any) => {
+  const updateRequirement = async (requirement: ProjectRequirement, field: keyof ProjectRequirement, value: any) => {
     const updated = { ...requirement, [field]: value };
     
     // Clamp withdrawn_qty to 0..required_qty and show warning if clamped
@@ -124,12 +144,12 @@ const ProjectDetail = () => {
       updated.withdrawn_qty = clampedWithdrawn;
     }
     
-    FakeApi.upsertRequirement(updated);
-    loadData();
+    await SupabaseApi.upsertRequirement(updated);
+    await loadData();
     toast.success('Requirement updated');
   };
 
-  const addRequirement = () => {
+  const addRequirement = async () => {
     if (!project) return;
     
     const newReq: ProjectRequirement = {
@@ -144,14 +164,14 @@ const ProjectDetail = () => {
       updated_at: new Date().toISOString()
     };
     
-    FakeApi.upsertRequirement(newReq);
-    loadData();
+    await SupabaseApi.upsertRequirement(newReq);
+    await loadData();
     toast.success('Requirement added');
   };
 
-  const deleteRequirement = (reqId: string) => {
-    FakeApi.deleteRequirement(reqId);
-    loadData();
+  const deleteRequirement = async (reqId: string) => {
+    await SupabaseApi.deleteRequirement(reqId);
+    await loadData();
     toast.success('Requirement deleted');
   };
 
@@ -227,10 +247,10 @@ const ProjectDetail = () => {
     updateRequirement(requirement, 'item_code', item_code);
   };
 
-  const getOtherBatchesQuantity = (itemCode: string): number => {
+  const getOtherBatchesQuantity = async (itemCode: string): Promise<number> => {
     if (!itemCode || !project?.meta?.['بند الميزانية']) return 0;
     
-    const otherBatches = FakeApi.getItemAvailabilityInOtherBatches(
+    const otherBatches = await SupabaseApi.getItemAvailabilityInOtherBatches(
       itemCode, 
       project.meta['بند الميزانية']
     );
@@ -238,10 +258,10 @@ const ProjectDetail = () => {
     return otherBatches.reduce((sum, batch) => sum + batch.current_balance, 0);
   };
 
-  const handleShowOtherBatches = (itemCode: string) => {
+  const handleShowOtherBatches = async (itemCode: string) => {
     if (!itemCode || !project?.meta?.['بند الميزانية']) return;
     
-    const otherBatches = FakeApi.getItemAvailabilityInOtherBatches(
+    const otherBatches = await SupabaseApi.getItemAvailabilityInOtherBatches(
       itemCode, 
       project.meta['بند الميزانية']
     );
@@ -286,11 +306,11 @@ const ProjectDetail = () => {
     toast.success('Requirements exported to CSV');
   };
 
-  const handleImportProject = (result: ProjectWorkbookResult) => {
+  const handleImportProject = async (result: ProjectWorkbookResult) => {
     if (!project) return;
 
     // Import requirements
-    result.requirements.forEach(reqData => {
+    for (const reqData of result.requirements) {
       const existing = requirements.find(r => r.item_code === reqData.item_code);
       const timestamp = new Date().toISOString();
       
@@ -301,8 +321,8 @@ const ProjectDetail = () => {
         updated_at: timestamp
       };
       
-      FakeApi.upsertRequirement(requirement);
-    });
+      await SupabaseApi.upsertRequirement(requirement);
+    }
 
     // Import metadata (handle [CLEAR] markers)
     const updatedProject = { ...project };
@@ -317,10 +337,10 @@ const ProjectDetail = () => {
       }
     });
 
-    FakeApi.upsertProject(updatedProject);
+    await SupabaseApi.upsertProject(updatedProject);
     
     // Refresh data
-    loadData();
+    await loadData();
     onProjectUpdated();
     
     toast.success(`Imported ${result.requirements.length} requirements and updated metadata`);
@@ -379,21 +399,21 @@ const ProjectDetail = () => {
             withdrawn_qty: allocation.new_withdrawn,
             updated_at: new Date().toISOString()
           };
-          FakeApi.upsertRequirement(updatedReq);
+          await SupabaseApi.upsertRequirement(updatedReq);
           updatedCount++;
         }
       }
     }
 
     // Refresh data to get updated computed values
-    loadData();
+    await loadData();
     
     toast.success(`Auto allocation completed: ${updatedCount} items updated`);
   };
 
-  const onProjectUpdated = () => {
+  const onProjectUpdated = async () => {
     if (!id) return;
-    const projects = FakeApi.listProjects();
+    const projects = await SupabaseApi.listProjects();
     const updatedProject = projects.find(p => p.project_id === id);
     if (updatedProject) {
       setProject(updatedProject);
@@ -594,7 +614,7 @@ const ProjectDetail = () => {
                   </TableCell>
                   <TableCell>
                     {(() => {
-                      const otherBatchesQty = getOtherBatchesQuantity(req.item_code);
+                      const otherBatchesQty = otherBatchesQuantities[req.item_code] || 0;
                       
                       if (!req.item_code || otherBatchesQty === 0) {
                         return <div className="text-xs text-muted-foreground">-</div>;

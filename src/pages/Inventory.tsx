@@ -116,6 +116,26 @@ const Inventory = () => {
       const { rows: _, ...snapshotData } = result as any
       const snapshot: InventorySnapshot = snapshotData
       
+      // Extract unique materials from inventory and create them first
+      const uniqueItemCodes = [...new Set(rows.map(r => r.item_code))]
+      const materials: Material[] = uniqueItemCodes.map(item_code => {
+        const row = rows.find(r => r.item_code === item_code)!
+        return {
+          item_code,
+          name: row.notes || item_code,
+          description: row.notes || '',
+          category: 'Imported',
+          unit: 'Unit',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      })
+      
+      // Upsert materials first to satisfy foreign key constraint
+      for (const material of materials) {
+        await SupabaseApi.upsertMaterial(material)
+      }
+      
       // Save snapshot and rows to Supabase
       await SupabaseApi.setActiveSnapshot(snapshot)
       await SupabaseApi.upsertInventoryRows(rows)

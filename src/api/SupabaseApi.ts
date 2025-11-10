@@ -182,7 +182,7 @@ class SupabaseApiService {
     }
   }
 
-  async upsertInventoryRows(rows: InventoryRow[]): Promise<void> {
+  async upsertInventoryRows(rows: Omit<InventoryRow, 'id'>[]): Promise<void> {
     if (rows.length === 0) return;
     
     const { error } = await supabase

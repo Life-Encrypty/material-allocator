@@ -36,8 +36,8 @@ export async function parseInventory(file: File): Promise<InventorySnapshot> {
         // Create column mapping
         const columnMap = createColumnMapping(headers);
         
-        // Parse data rows
-        const inventoryRows: InventoryRow[] = [];
+        // Parse data rows (omit id to let database generate UUIDs)
+        const inventoryRows: (Omit<InventoryRow, 'id'> & { id?: string })[] = [];
         const timestamp = new Date().toISOString();
         const snapshotId = `INV_${timestamp.replace(/[:.]/g, '-')}`;
         
@@ -49,8 +49,7 @@ export async function parseInventory(file: File): Promise<InventorySnapshot> {
             return;
           }
           
-          const inventoryRow: InventoryRow = {
-            id: `${snapshotId}_${index}`,
+          const inventoryRow: Omit<InventoryRow, 'id'> & { id?: string } = {
             snapshot_id: snapshotId,
             item_code: parsedRow.item_code.trim(),
             batch_number: parsedRow.batch_number?.trim() || 'DEFAULT-BATCH',

@@ -109,8 +109,8 @@ const Inventory = () => {
     try {
       const result = await parseInventory(file)
       
-      // Extract rows from the result
-      const rows = (result as any).rows as InventoryRow[]
+      // Extract rows from the result (without id - database will generate)
+      const rows = (result as any).rows as Omit<InventoryRow, 'id'>[]
       
       // Create snapshot object without the rows property
       const { rows: _, ...snapshotData } = result as any

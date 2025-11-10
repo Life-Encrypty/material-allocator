@@ -107,13 +107,17 @@ const Inventory = () => {
     setIsUploading(true)
     
     try {
-      const snapshot = await parseInventory(file)
+      const result = await parseInventory(file)
+      
+      // Extract rows from the result
+      const rows = (result as any).rows as InventoryRow[]
+      
+      // Create snapshot object without the rows property
+      const { rows: _, ...snapshotData } = result as any
+      const snapshot: InventorySnapshot = snapshotData
       
       // Save snapshot and rows to Supabase
       await SupabaseApi.setActiveSnapshot(snapshot)
-      
-      // Save inventory rows
-      const rows = (snapshot as any).rows as InventoryRow[]
       await SupabaseApi.upsertInventoryRows(rows)
       
       // Reload data

@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Plus, Trash2, Filter, Download, Upload, FileDown, AlertTriangle, Zap } from 'lucide-react';
 import { SupabaseApi } from '@/api/SupabaseApi';
 import { ProjectMetadataPanel } from '@/components/ProjectMetadataPanel';
@@ -56,6 +57,7 @@ const ProjectDetail = () => {
     new_withdrawn: number;
     change: number;
   }>>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Realtime requirements updates
   useRealtimeRequirements({
@@ -79,16 +81,21 @@ const ProjectDetail = () => {
     
     // Load project
     const loadProject = async () => {
-      const projects = await SupabaseApi.listProjects();
-      const foundProject = projects.find(p => p.project_id === id);
-      if (!foundProject) {
-        navigate('/projects');
-        return;
-      }
-      setProject(foundProject);
+      setIsLoading(true);
+      try {
+        const projects = await SupabaseApi.listProjects();
+        const foundProject = projects.find(p => p.project_id === id);
+        if (!foundProject) {
+          navigate('/projects');
+          return;
+        }
+        setProject(foundProject);
 
-      // Load data
-      await loadData();
+        // Load data
+        await loadData();
+      } finally {
+        setIsLoading(false);
+      }
     };
     
     loadProject();
@@ -459,6 +466,31 @@ const ProjectDetail = () => {
 
   return (
     <div className="space-y-6">
+      {isLoading ? (
+        <>
+          {/* Header Skeleton */}
+          <div className="flex items-center space-x-4">
+            <Skeleton className="h-10 w-10" />
+            <div className="flex-1">
+              <Skeleton className="h-8 w-64 mb-2" />
+              <div className="flex space-x-2">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-6 w-24" />
+                <Skeleton className="h-6 w-28" />
+              </div>
+            </div>
+          </div>
+          
+          {/* Content Skeletons */}
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </>
+      ) : !project ? (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">Project not found</p>
+        </div>
+      ) : (
+        <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -755,6 +787,8 @@ const ProjectDetail = () => {
         allocations={allocationPreviews}
         projectName={project.name}
       />
+        </>
+      )}
     </div>
   );
 };

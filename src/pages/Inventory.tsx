@@ -239,6 +239,41 @@ const Inventory = () => {
     }
   };
 
+  const handleDeleteSnapshot = async (snapshotId: string) => {
+    if (!confirm('Are you sure you want to delete this snapshot? All related inventory rows will also be deleted.')) return;
+
+    try {
+      // Delete related inventory rows first
+      const { error: rowsError } = await supabase
+        .from('inventory_rows')
+        .delete()
+        .eq('snapshot_id', snapshotId);
+
+      if (rowsError) throw rowsError;
+
+      // Delete the snapshot
+      const { error: snapshotError } = await supabase
+        .from('inventory_snapshots')
+        .delete()
+        .eq('snapshot_id', snapshotId);
+
+      if (snapshotError) throw snapshotError;
+
+      await loadInventoryData();
+
+      toast({
+        title: "Deleted",
+        description: "Snapshot and related inventory rows deleted successfully"
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete snapshot",
+        variant: "destructive"
+      });
+    }
+  };
+
   const getStockStatus = (current: number) => {
     if (current <= 10) return { status: 'Critical', color: 'bg-destructive text-destructive-foreground' }
     if (current <= 50) return { status: 'Low', color: 'bg-warning text-warning-foreground' }
@@ -440,13 +475,22 @@ const Inventory = () => {
                       </Badge>
                     )}
                     {snapshot.snapshot_id !== activeSnapshotId && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSetActiveSnapshot(snapshot.snapshot_id)}
-                      >
-                        Set Active
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleSetActiveSnapshot(snapshot.snapshot_id)}
+                        >
+                          Set Active
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteSnapshot(snapshot.snapshot_id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>

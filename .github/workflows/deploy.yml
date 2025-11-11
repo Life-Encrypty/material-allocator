@@ -3,7 +3,7 @@ name: Build & Deploy React App
 on:
   push:
     branches:
-      - release
+      - release-shared-version
 
 jobs:
   build-and-deploy:

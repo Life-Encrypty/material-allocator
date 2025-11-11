@@ -6,10 +6,23 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Upload, AlertTriangle, CheckCircle, FileText, X, FolderOpen } from 'lucide-react';
-import { parseProjectWorkbook, type ProjectWorkbookResult } from '@/utils/xlsx';
-import { FakeApi } from '@/api/FakeApi';
+import { supabase } from '@/integrations/supabase/client';
+import { SupabaseApi } from '@/api/SupabaseApi';
 import { Project } from '@/domain/types';
 import { toast } from 'sonner';
+
+type ProjectWorkbookResult = {
+  requirements: Array<{
+    project_id: string;
+    item_code: string;
+    required_qty: number;
+    withdrawn_qty: number;
+    exclude_from_allocation?: boolean;
+    notes?: string;
+  }>;
+  metadata: Record<string, string>;
+  warnings: string[];
+};
 
 interface BulkProjectImporterProps {
   isOpen: boolean;
@@ -92,105 +105,67 @@ export const BulkProjectImporter = ({ isOpen, onClose, onImportComplete }: BulkP
 
   const processFiles = async () => {
     if (files.length === 0) return;
-
+    
     setIsProcessing(true);
     setProcessingProgress(0);
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const resultIndex = i;
-
-      setResults(prev => prev.map((result, idx) => 
-        idx === resultIndex ? { ...result, status: 'processing' } : result
-      ));
-
-      try {
-        const data = await parseProjectWorkbook(file, results[resultIndex].projectId);
-        
-        // Use project name from metadata sheet, fallback to filename
-        const actualProjectName = data.metadata['اسم المشروع'] || results[resultIndex].projectName;
-        
-        console.log('BulkImport Debug:', {
-          filename: file.name,
-          metadataProjectName: data.metadata['اسم المشروع'],
-          actualProjectName,
-          filenameProjectName: results[resultIndex].projectName
-        });
-        
-        // Check if project exists using the actual project name from metadata
-        const existingProjects = FakeApi.listProjects();
-        console.log('Existing projects:', existingProjects.map(p => ({ id: p.project_id, name: p.name })));
-        
-        const existingProject = existingProjects.find(p => 
-          p.name.toLowerCase() === actualProjectName.toLowerCase()
-        );
-        
-        console.log('Found existing project:', existingProject ? { id: existingProject.project_id, name: existingProject.name } : 'None');
-
-        // Ensure new projects get a truly unique ID to avoid accidental overrides
-        const projectIdToUse = existingProject?.project_id || `prj-${crypto.randomUUID()}`;
-        if (!existingProject && results[resultIndex].projectId !== projectIdToUse) {
-          setResults(prev => prev.map((r, idx) => idx === resultIndex ? { ...r, projectId: projectIdToUse, projectName: actualProjectName } : r));
-        }
-
-        const projectData: Project = {
-          project_id: projectIdToUse,
-          name: actualProjectName,
-          priority: Math.floor(Math.random() * 100) + 1, // Random priority as requested
-          status: existingProject?.status || 'Planning',
-          created_at: existingProject?.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          description: existingProject?.description,
-          deadline: existingProject?.deadline,
-          meta: { ...existingProject?.meta, ...data.metadata }
-        };
-
-        // Upsert project
-        FakeApi.upsertProject(projectData);
-
-        // Clear existing requirements if updating
-        if (existingProject) {
-          const existingRequirements = FakeApi.listRequirements().filter(
-            req => req.project_id === existingProject.project_id
-          );
-          existingRequirements.forEach(req => FakeApi.deleteRequirement(req.id));
-        }
-
-        // Add new requirements
-        data.requirements.forEach(req => {
-          FakeApi.upsertRequirement({
-            ...req,
-            id: crypto.randomUUID(),
-            project_id: projectData.project_id,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-        });
-
-        setResults(prev => prev.map((result, idx) => 
-          idx === resultIndex ? { 
-            ...result, 
-            status: 'success', 
-            data,
-            warnings: data.warnings 
-          } : result
-        ));
-
-      } catch (error) {
-        setResults(prev => prev.map((result, idx) => 
-          idx === resultIndex ? { 
-            ...result, 
-            status: 'error', 
-            error: error instanceof Error ? error.message : 'Unknown error'
-          } : result
-        ));
+    try {
+      // Upload all files to edge function at once
+      const formData = new FormData();
+      files.forEach(file => {
+        formData.append('files', file);
+      });
+      
+      const { data, error } = await supabase.functions.invoke('import-projects', {
+        body: formData
+      });
+      
+      if (error) {
+        throw new Error(error.message);
       }
-
-      setProcessingProgress(((i + 1) / files.length) * 100);
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Import failed');
+      }
+      
+      // Update results with data from edge function
+      setResults(prev => prev.map((result, idx) => {
+        const edgeFunctionResult = data.results[idx];
+        if (!edgeFunctionResult) return result;
+        
+        return {
+          ...result,
+          projectId: edgeFunctionResult.project_id || result.projectId,
+          projectName: edgeFunctionResult.project_name || result.projectName,
+          status: edgeFunctionResult.status === 'error' ? 'error' : 'success',
+          error: edgeFunctionResult.error,
+          warnings: edgeFunctionResult.warnings || [],
+          data: {
+            requirements: Array(edgeFunctionResult.requirements_count || 0).fill({ 
+              project_id: edgeFunctionResult.project_id,
+              item_code: '',
+              required_qty: 0,
+              withdrawn_qty: 0
+            }),
+            metadata: {},
+            warnings: edgeFunctionResult.warnings || []
+          }
+        };
+      }));
+      
+      setProcessingProgress(100);
+      toast.success(`Successfully processed ${data.results.filter((r: any) => r.status !== 'error').length} out of ${files.length} projects`);
+      
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Import failed');
+      setResults(prev => prev.map(result => ({
+        ...result,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })));
+    } finally {
+      setIsProcessing(false);
     }
-
-    setIsProcessing(false);
-    toast.success(`Successfully processed ${results.filter(r => r.status === 'success').length} out of ${files.length} projects`);
   };
 
   const handleClose = () => {

@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Plus, GripVertical, Eye, Trash2, FolderOpen, Download } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { FakeApi } from '@/api/FakeApi';
+import { SupabaseApi } from '@/api/SupabaseApi';
 import AddProjectModal from '@/components/AddProjectModal';
 import { ProjectSearchForm } from '@/components/ProjectSearchForm';
 import { BulkProjectImporter } from '@/components/BulkProjectImporter';
@@ -151,6 +152,7 @@ const Projects = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkImporter, setShowBulkImporter] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -163,20 +165,25 @@ const Projects = () => {
     loadProjects();
   }, []);
 
-  const loadProjects = () => {
-    const projectList = FakeApi.listProjects();
-    // Sort by priority ascending (0 = highest), then by project_id ascending
-    const sortedProjects = [...projectList].sort((a, b) => {
-      if (a.priority !== b.priority) {
-        return a.priority - b.priority;
-      }
-      return a.project_id.localeCompare(b.project_id);
-    });
-    setAllProjects(sortedProjects);
-    setProjects(sortedProjects);
+  const loadProjects = async () => {
+    setIsLoading(true);
+    try {
+      const projectList = await SupabaseApi.listProjects();
+      // Sort by priority ascending (0 = highest), then by project_id ascending
+      const sortedProjects = [...projectList].sort((a, b) => {
+        if (a.priority !== b.priority) {
+          return a.priority - b.priority;
+        }
+        return a.project_id.localeCompare(b.project_id);
+      });
+      setAllProjects(sortedProjects);
+      setProjects(sortedProjects);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDragEnd = (event: any) => {
+  const handleDragEnd = async (event: any) => {
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
@@ -192,9 +199,9 @@ const Projects = () => {
       }));
       
       // Save each project with new priority
-      updatedProjects.forEach(project => {
-        FakeApi.upsertProject(project);
-      });
+      for (const project of updatedProjects) {
+        await SupabaseApi.upsertProject(project);
+      }
       
       setProjects(updatedProjects);
       loadProjects(); // Reload to sync with all projects
@@ -206,16 +213,16 @@ const Projects = () => {
     navigate(`/projects/${projectId}`);
   };
 
-  const handleDeleteProject = (projectId: string) => {
-    FakeApi.deleteProject(projectId);
+  const handleDeleteProject = async (projectId: string) => {
+    await SupabaseApi.deleteProject(projectId);
     loadProjects();
     toast.success('Project deleted successfully');
   };
 
-  const handleSearch = (query: string) => {
+  const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (query.trim()) {
-      const filtered = FakeApi.searchProjects(query);
+      const filtered = await SupabaseApi.searchProjects(query);
       setProjects(filtered);
     } else {
       setProjects(allProjects);
@@ -325,24 +332,54 @@ const Projects = () => {
 
       {/* Projects List - Draggable */}
       <div className="space-y-4">
-        <DndContext 
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext items={projects.map(p => p.project_id)} strategy={verticalListSortingStrategy}>
-            {projects.map((project) => (
-              <SortableProject 
-                key={project.project_id} 
-                project={project} 
-                onView={handleViewProject}
-                onDelete={handleDeleteProject}
-              />
+        {isLoading ? (
+          <>
+            {[1, 2, 3].map(i => (
+              <Card key={i}>
+                <CardHeader>
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center space-x-3 flex-1">
+                      <Skeleton className="h-4 w-4" />
+                      <div className="flex-1">
+                        <Skeleton className="h-6 w-48 mb-2" />
+                        <Skeleton className="h-4 w-64" />
+                      </div>
+                    </div>
+                    <Skeleton className="h-6 w-20" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-between items-center">
+                    <Skeleton className="h-4 w-32" />
+                    <div className="flex space-x-2">
+                      <Skeleton className="h-9 w-20" />
+                      <Skeleton className="h-9 w-10" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
-          </SortableContext>
-        </DndContext>
+          </>
+        ) : (
+          <DndContext 
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={projects.map(p => p.project_id)} strategy={verticalListSortingStrategy}>
+              {projects.map((project) => (
+                <SortableProject 
+                  key={project.project_id} 
+                  project={project} 
+                  onView={handleViewProject}
+                  onDelete={handleDeleteProject}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+        )}
         
-        {projects.length === 0 && (
+        {!isLoading && projects.length === 0 && (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <p className="text-muted-foreground text-lg mb-4">

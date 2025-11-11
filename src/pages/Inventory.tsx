@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Search, Package, AlertTriangle, TrendingUp, TrendingDown, Upload, FileSpreadsheet, Trash2, Download } from 'lucide-react'
-import { FakeApi } from '@/api/FakeApi'
-import { parseInventory } from '@/utils/xlsx'
-import { K } from '@/storage/keys'
+import { Plus, Search, Package, AlertTriangle, TrendingUp, TrendingDown, Upload, FileSpreadsheet, Trash2, Download, Check, X } from 'lucide-react'
+import { SupabaseApi } from '@/api/SupabaseApi'
+import { useRealtimeInventory } from '@/hooks/useRealtimeInventory'
+import { supabase } from '@/integrations/supabase/client'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { InventorySnapshot, InventoryRow, Material } from '@/domain/types'
 
 const Inventory = () => {
@@ -17,29 +18,50 @@ const Inventory = () => {
   const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(null)
   const [currentInventory, setCurrentInventory] = useState<InventoryRow[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [pendingSnapshotId, setPendingSnapshotId] = useState<string | null>(null)
-  const [showClearDialog, setShowClearDialog] = useState(false)
+  const [editingRow, setEditingRow] = useState<string | null>(null)
+  const [editValues, setEditValues] = useState<{ batch_number: string; current_balance: string }>({ batch_number: '', current_balance: '' })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+
+  // Realtime inventory updates
+  useRealtimeInventory({
+    snapshotId: activeSnapshotId,
+    onInsert: (row) => {
+      setCurrentInventory(prev => [...prev, row]);
+    },
+    onUpdate: (row) => {
+      setCurrentInventory(prev => prev.map(r => r.id === row.id ? row : r));
+    },
+    onDelete: (rowId) => {
+      setCurrentInventory(prev => prev.filter(r => r.id !== rowId));
+    }
+  });
 
   // Load data on component mount
   useEffect(() => {
     loadInventoryData()
   }, [])
 
-  const loadInventoryData = () => {
-    const snapshotsList = FakeApi.listSnapshots()
-    const activeId = FakeApi.getActiveSnapshotId()
-    const inventory = FakeApi.getCurrentInventory()
-    
-    setSnapshots(snapshotsList)
-    setActiveSnapshotId(activeId)
-    setCurrentInventory(inventory)
-  }
+  const loadInventoryData = async () => {
+    setIsLoading(true);
+    try {
+      const snapshotsList = await SupabaseApi.listSnapshots();
+      const activeId = await SupabaseApi.getActiveSnapshotId();
+      const inventory = await SupabaseApi.getCurrentInventory();
+      
+      setSnapshots(snapshotsList);
+      setActiveSnapshotId(activeId);
+      setCurrentInventory(inventory);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  const downloadInventoryFile = () => {
-    const materials = FakeApi.listMaterials()
+  const downloadInventoryFile = async () => {
+    const materials = await SupabaseApi.listMaterials();
     
     const csvData = currentInventory.map(item => {
       const material = materials.find(m => m.item_code === item.item_code)
@@ -92,23 +114,28 @@ const Inventory = () => {
     setIsUploading(true)
     
     try {
-      const snapshot = await parseInventory(file)
+      // Upload file to edge function
+      const formData = new FormData()
+      formData.append('file', file)
       
-      // Save snapshot and rows to localStorage
-      FakeApi.setActiveSnapshot(snapshot)
-      
-      // Save inventory rows
-      const rows = (snapshot as any).rows as InventoryRow[]
-      rows.forEach(row => {
-        FakeApi.upsertInventoryRow(row)
+      const { data, error } = await supabase.functions.invoke('import-inventory', {
+        body: formData
       })
       
+      if (error) {
+        throw new Error(error.message)
+      }
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Import failed')
+      }
+      
       // Reload data
-      loadInventoryData()
+      await loadInventoryData()
       
       toast({
         title: "Import successful",
-        description: `Imported ${rows.length} inventory items from ${file.name}`,
+        description: `Imported ${data.snapshot.item_count} inventory items from ${file.name}`,
       })
       
       // Clear file input
@@ -132,12 +159,12 @@ const Inventory = () => {
     setShowConfirmDialog(true)
   }
 
-  const confirmSnapshotChange = () => {
+  const confirmSnapshotChange = async () => {
     if (pendingSnapshotId) {
       const snapshot = snapshots.find(s => s.snapshot_id === pendingSnapshotId)
       if (snapshot) {
-        FakeApi.setActiveSnapshot(snapshot)
-        loadInventoryData()
+        await SupabaseApi.setActiveSnapshot(snapshot)
+        await loadInventoryData()
         
         toast({
           title: "Active snapshot changed",
@@ -149,19 +176,110 @@ const Inventory = () => {
     setPendingSnapshotId(null)
   }
 
-  const handleClearAllData = () => {
-    // Clear all localStorage keys with db:v1: prefix
-    const keysToDelete = Object.keys(localStorage).filter(key => key.startsWith('db:v1:'))
-    keysToDelete.forEach(key => localStorage.removeItem(key))
-    
-    // Reload page to reset state
-    window.location.reload()
-    
-    toast({
-      title: "Data cleared",
-      description: "All database data has been cleared.",
-    })
-  }
+  const handleEditRow = (row: InventoryRow) => {
+    setEditingRow(row.id);
+    setEditValues({
+      batch_number: row.batch_number,
+      current_balance: row.current_balance.toString()
+    });
+  };
+
+  const handleSaveEdit = async (rowId: string) => {
+    const row = currentInventory.find(r => r.id === rowId);
+    if (!row) return;
+
+    const updatedRow = {
+      ...row,
+      batch_number: editValues.batch_number,
+      current_balance: parseFloat(editValues.current_balance) || 0
+    };
+
+    // Optimistically update the UI
+    setCurrentInventory(prev => prev.map(r => r.id === rowId ? updatedRow : r));
+    setEditingRow(null);
+
+    try {
+      await SupabaseApi.upsertInventoryRow(updatedRow);
+
+      toast({
+        title: "Updated",
+        description: "Inventory row updated successfully"
+      });
+    } catch (error) {
+      // Revert on error
+      setCurrentInventory(prev => prev.map(r => r.id === rowId ? row : r));
+      
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update row",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingRow(null);
+    setEditValues({ batch_number: '', current_balance: '' });
+  };
+
+  const handleDeleteRow = async (rowId: string) => {
+    if (!confirm('Are you sure you want to delete this inventory row?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('inventory_rows')
+        .delete()
+        .eq('id', rowId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Deleted",
+        description: "Inventory row deleted successfully"
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete row",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDeleteSnapshot = async (snapshotId: string) => {
+    if (!confirm('Are you sure you want to delete this snapshot? All related inventory rows will also be deleted.')) return;
+
+    try {
+      // Delete related inventory rows first
+      const { error: rowsError } = await supabase
+        .from('inventory_rows')
+        .delete()
+        .eq('snapshot_id', snapshotId);
+
+      if (rowsError) throw rowsError;
+
+      // Delete the snapshot
+      const { error: snapshotError } = await supabase
+        .from('inventory_snapshots')
+        .delete()
+        .eq('snapshot_id', snapshotId);
+
+      if (snapshotError) throw snapshotError;
+
+      await loadInventoryData();
+
+      toast({
+        title: "Deleted",
+        description: "Snapshot and related inventory rows deleted successfully"
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete snapshot",
+        variant: "destructive"
+      });
+    }
+  };
 
   const getStockStatus = (current: number) => {
     if (current <= 10) return { status: 'Critical', color: 'bg-destructive text-destructive-foreground' }
@@ -204,14 +322,6 @@ const Inventory = () => {
             <Download className="h-4 w-4 mr-2" />
             Download Inventory
           </Button>
-          <Button 
-            variant="destructive" 
-            size="sm"
-            onClick={() => setShowClearDialog(true)}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Clear Data (v1)
-          </Button>
         </div>
       </div>
 
@@ -223,8 +333,14 @@ const Inventory = () => {
             <Package className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalItems}</div>
-            <p className="text-xs text-muted-foreground">Active materials</p>
+            {isLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{totalItems}</div>
+                <p className="text-xs text-muted-foreground">Active materials</p>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -234,8 +350,14 @@ const Inventory = () => {
             <TrendingUp className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalValue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Current inventory value</p>
+            {isLoading ? (
+              <Skeleton className="h-8 w-24" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold">${totalValue.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Current inventory value</p>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -245,8 +367,14 @@ const Inventory = () => {
             <AlertTriangle className="h-4 w-4 text-warning" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{lowStockItems}</div>
-            <p className="text-xs text-muted-foreground">Items need restocking</p>
+            {isLoading ? (
+              <Skeleton className="h-8 w-12" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{lowStockItems}</div>
+                <p className="text-xs text-muted-foreground">Items need restocking</p>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -256,8 +384,14 @@ const Inventory = () => {
             <TrendingDown className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{criticalItems}</div>
-            <p className="text-xs text-muted-foreground">Urgent attention needed</p>
+            {isLoading ? (
+              <Skeleton className="h-8 w-12" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{criticalItems}</div>
+                <p className="text-xs text-muted-foreground">Urgent attention needed</p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -348,13 +482,22 @@ const Inventory = () => {
                       </Badge>
                     )}
                     {snapshot.snapshot_id !== activeSnapshotId && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSetActiveSnapshot(snapshot.snapshot_id)}
-                      >
-                        Set Active
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleSetActiveSnapshot(snapshot.snapshot_id)}
+                        >
+                          Set Active
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteSnapshot(snapshot.snapshot_id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -387,7 +530,27 @@ const Inventory = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {filteredInventory.length === 0 ? (
+            {isLoading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="p-4 border rounded-lg">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                      <div className="md:col-span-2">
+                        <Skeleton className="h-5 w-32 mb-2" />
+                        <Skeleton className="h-4 w-48" />
+                      </div>
+                      <Skeleton className="h-5 w-20" />
+                      <Skeleton className="h-5 w-16" />
+                      <Skeleton className="h-5 w-24" />
+                      <div className="flex space-x-2">
+                        <Skeleton className="h-9 w-16" />
+                        <Skeleton className="h-9 w-16" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredInventory.length === 0 ? (
               <div className="text-center py-8">
                 <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-muted-foreground">
@@ -399,7 +562,9 @@ const Inventory = () => {
               </div>
             ) : (
               filteredInventory.map((item) => {
-                const stockStatus = getStockStatus(item.current_balance)
+                const stockStatus = getStockStatus(item.current_balance);
+                const isEditing = editingRow === item.id;
+                
                 return (
                   <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
                     <div className="flex-1 grid grid-cols-1 md:grid-cols-6 gap-4 items-center">
@@ -409,17 +574,38 @@ const Inventory = () => {
                       </div>
                       
                       <div className="text-center">
-                        <div className="text-sm font-medium">{item.batch_number}</div>
-                        <div className="text-xs text-muted-foreground">Batch</div>
+                        {isEditing ? (
+                          <Input 
+                            value={editValues.batch_number}
+                            onChange={(e) => setEditValues(prev => ({ ...prev, batch_number: e.target.value }))}
+                            className="h-8 text-sm"
+                          />
+                        ) : (
+                          <>
+                            <div className="text-sm font-medium">{item.batch_number}</div>
+                            <div className="text-xs text-muted-foreground">Batch</div>
+                          </>
+                        )}
                       </div>
                       
                       <div className="text-center">
-                        <div className="font-medium">{item.current_balance.toLocaleString()}</div>
-                        <div className="flex items-center justify-center mt-1">
-                          <Badge className={stockStatus.color} variant="secondary">
-                            {stockStatus.status}
-                          </Badge>
-                        </div>
+                        {isEditing ? (
+                          <Input 
+                            type="number"
+                            value={editValues.current_balance}
+                            onChange={(e) => setEditValues(prev => ({ ...prev, current_balance: e.target.value }))}
+                            className="h-8 text-sm"
+                          />
+                        ) : (
+                          <>
+                            <div className="font-medium">{item.current_balance.toLocaleString()}</div>
+                            <div className="flex items-center justify-center mt-1">
+                              <Badge className={stockStatus.color} variant="secondary">
+                                {stockStatus.status}
+                              </Badge>
+                            </div>
+                          </>
+                        )}
                       </div>
                       
                       <div className="text-center">
@@ -427,9 +613,42 @@ const Inventory = () => {
                         <div className="text-xs text-muted-foreground">Location</div>
                       </div>
                       
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm">Edit</Button>
-                        <Button variant="outline" size="sm">Allocate</Button>
+                      <div className="flex space-x-2 justify-end">
+                        {isEditing ? (
+                          <>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleSaveEdit(item.id)}
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={handleCancelEdit}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleEditRow(item)}
+                            >
+                              Edit
+                            </Button>
+                            <Button 
+                              variant="destructive" 
+                              size="sm"
+                              onClick={() => handleDeleteRow(item.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -453,23 +672,6 @@ const Inventory = () => {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmSnapshotChange}>
               Confirm Switch
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={showClearDialog} onOpenChange={setShowClearDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Clear All Data</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to clear all database data? This will remove all projects, requirements, inventory snapshots, and materials. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleClearAllData} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Clear All Data
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

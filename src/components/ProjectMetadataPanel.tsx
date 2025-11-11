@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
-import { FakeApi } from '@/api/FakeApi';
+import { SupabaseApi } from '@/api/SupabaseApi';
 import { toast } from 'sonner';
 import type { Project } from '@/domain/types';
 
@@ -25,24 +25,24 @@ export const ProjectMetadataPanel = ({ project, onProjectUpdated }: ProjectMetad
     }));
   };
 
-  const saveMetadata = () => {
+  const saveMetadata = async () => {
     const updatedProject = {
       ...project,
       meta: metadata
     };
     
-    FakeApi.upsertProject(updatedProject);
+    await SupabaseApi.upsertProject(updatedProject);
     onProjectUpdated();
     toast.success('Project metadata updated');
   };
 
-  const deleteEmptyTemplate = () => {
+  const deleteEmptyTemplate = async () => {
     const updatedProject = {
       ...project,
       meta: {}
     };
     
-    FakeApi.upsertProject(updatedProject);
+    await SupabaseApi.upsertProject(updatedProject);
     setMetadata({});
     onProjectUpdated();
     toast.success('Project metadata template cleared');

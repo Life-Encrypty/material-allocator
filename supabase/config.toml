@@ -1,0 +1,7 @@
+project_id = "jlzikbwmaufvmuvlnwmd"
+
+[functions.import-inventory]
+verify_jwt = false
+
+[functions.import-projects]
+verify_jwt = false

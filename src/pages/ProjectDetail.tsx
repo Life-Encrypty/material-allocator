@@ -6,16 +6,31 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Plus, Trash2, Filter, Download, Upload, FileDown, AlertTriangle, Zap } from 'lucide-react';
-import { FakeApi } from '@/api/FakeApi';
+import { SupabaseApi } from '@/api/SupabaseApi';
 import { ProjectMetadataPanel } from '@/components/ProjectMetadataPanel';
 import { ImportProjectModal } from '@/components/ImportProjectModal';
 import { SearchableCombobox } from '@/components/SearchableCombobox';
 import { OtherBatchesDialog } from '@/components/OtherBatchesDialog';
 import { AutoAllocationDialog } from '@/components/AutoAllocationDialog';
+import { useRealtimeRequirements } from '@/hooks/useRealtimeRequirements';
 import { toast } from 'sonner';
-import { exportProjectTemplate, type ProjectWorkbookResult } from '@/utils/xlsx';
+import { exportProjectTemplate } from '@/utils/xlsx';
 import type { Project, ProjectRequirement, Material, ProjectItemComputed, InventoryRow } from '@/domain/types';
+
+type ProjectWorkbookResult = {
+  requirements: Array<{
+    project_id: string;
+    item_code: string;
+    required_qty: number;
+    withdrawn_qty: number;
+    exclude_from_allocation?: boolean;
+    notes?: string;
+  }>;
+  metadata: Record<string, string>;
+  warnings: string[];
+};
 
 const ProjectDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -32,6 +47,7 @@ const ProjectDetail = () => {
     itemCode: string;
     otherBatches: InventoryRow[];
   } | null>(null);
+  const [otherBatchesQuantities, setOtherBatchesQuantities] = useState<Record<string, number>>({});
   const [showAutoAllocationModal, setShowAutoAllocationModal] = useState(false);
   const [allocationPreviews, setAllocationPreviews] = useState<Array<{
     item_code: string;
@@ -41,37 +57,79 @@ const ProjectDetail = () => {
     new_withdrawn: number;
     change: number;
   }>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Realtime requirements updates
+  useRealtimeRequirements({
+    projectId: id,
+    onInsert: (requirement) => {
+      setRequirements(prev => [...prev, requirement]);
+      loadData(); // Reload to update computed values
+    },
+    onUpdate: (requirement) => {
+      setRequirements(prev => prev.map(r => r.id === requirement.id ? requirement : r));
+      loadData(); // Reload to update computed values
+    },
+    onDelete: (requirementId) => {
+      setRequirements(prev => prev.filter(r => r.id !== requirementId));
+      loadData(); // Reload to update computed values
+    }
+  });
 
   useEffect(() => {
     if (!id) return;
     
     // Load project
-    const projects = FakeApi.listProjects();
-    const foundProject = projects.find(p => p.project_id === id);
-    if (!foundProject) {
-      navigate('/projects');
-      return;
-    }
-    setProject(foundProject);
+    const loadProject = async () => {
+      setIsLoading(true);
+      try {
+        const projects = await SupabaseApi.listProjects();
+        const foundProject = projects.find(p => p.project_id === id);
+        if (!foundProject) {
+          navigate('/projects');
+          return;
+        }
+        setProject(foundProject);
 
-    // Load data
-    loadData();
+        // Load data
+        await loadData();
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadProject();
   }, [id, navigate]);
 
-  const loadData = () => {
+  const loadData = async () => {
     if (!id) return;
     
-    const reqs = FakeApi.listRequirements().filter(r => r.project_id === id);
+    const reqs = (await SupabaseApi.listRequirements()).filter(r => r.project_id === id);
     setRequirements(reqs);
     
-    const mats = FakeApi.listMaterials();
+    const mats = await SupabaseApi.listMaterials();
     setMaterials(mats);
     
-    const inv = FakeApi.getCurrentInventory();
+    const inv = await SupabaseApi.getCurrentInventory();
     setInventory(inv);
     
-    const computed = FakeApi.getComputedPerProject().filter(c => c.project_id === id);
+    const computed = (await SupabaseApi.getComputedPerProject()).filter(c => c.project_id === id);
     setComputedData(computed);
+    
+    // Compute other batches quantities for all items
+    if (project?.meta?.['بند الميزانية']) {
+      const quantities: Record<string, number> = {};
+      for (const req of reqs) {
+        if (req.item_code) {
+          const otherBatches = await SupabaseApi.getItemAvailabilityInOtherBatches(
+            req.item_code,
+            project.meta['بند الميزانية']
+          );
+          quantities[req.item_code] = otherBatches.reduce((sum, batch) => sum + batch.current_balance, 0);
+        }
+      }
+      setOtherBatchesQuantities(quantities);
+    }
   };
 
   const getMaterialDescription = (itemCode: string): string => {
@@ -107,7 +165,7 @@ const ProjectDetail = () => {
     };
   };
 
-  const updateRequirement = (requirement: ProjectRequirement, field: keyof ProjectRequirement, value: any) => {
+  const updateRequirement = async (requirement: ProjectRequirement, field: keyof ProjectRequirement, value: any) => {
     const updated = { ...requirement, [field]: value };
     
     // Clamp withdrawn_qty to 0..required_qty and show warning if clamped
@@ -124,34 +182,44 @@ const ProjectDetail = () => {
       updated.withdrawn_qty = clampedWithdrawn;
     }
     
-    FakeApi.upsertRequirement(updated);
-    loadData();
+    await SupabaseApi.upsertRequirement(updated);
+    await loadData();
     toast.success('Requirement updated');
   };
 
-  const addRequirement = () => {
-    if (!project) return;
+  const addRequirement = async () => {
+    console.log('Add Row button clicked');
     
-    const newReq: ProjectRequirement = {
-      id: `req_${Date.now()}`,
-      project_id: project.project_id,
-      item_code: '',
-      required_qty: 0,
-      withdrawn_qty: 0,
-      exclude_from_allocation: false,
-      notes: '',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
+    if (!project) {
+      console.error('No project found');
+      toast.error('Project not loaded');
+      return;
+    }
     
-    FakeApi.upsertRequirement(newReq);
-    loadData();
-    toast.success('Requirement added');
+    try {
+      const newReqInput = {
+        project_id: project.project_id,
+        item_code: null as any, // Nullable - user will fill it in
+        required_qty: 0,
+        withdrawn_qty: 0,
+        exclude_from_allocation: false,
+        notes: ''
+      };
+      
+      console.log('Creating requirement:', newReqInput);
+      await SupabaseApi.createRequirement(newReqInput);
+      await loadData();
+      toast.success('Requirement added');
+      console.log('Requirement added successfully');
+    } catch (error) {
+      console.error('Error adding requirement:', error);
+      toast.error('Failed to add requirement');
+    }
   };
 
-  const deleteRequirement = (reqId: string) => {
-    FakeApi.deleteRequirement(reqId);
-    loadData();
+  const deleteRequirement = async (reqId: string) => {
+    await SupabaseApi.deleteRequirement(reqId);
+    await loadData();
     toast.success('Requirement deleted');
   };
 
@@ -227,21 +295,10 @@ const ProjectDetail = () => {
     updateRequirement(requirement, 'item_code', item_code);
   };
 
-  const getOtherBatchesQuantity = (itemCode: string): number => {
-    if (!itemCode || !project?.meta?.['بند الميزانية']) return 0;
-    
-    const otherBatches = FakeApi.getItemAvailabilityInOtherBatches(
-      itemCode, 
-      project.meta['بند الميزانية']
-    );
-    
-    return otherBatches.reduce((sum, batch) => sum + batch.current_balance, 0);
-  };
-
-  const handleShowOtherBatches = (itemCode: string) => {
+  const handleShowOtherBatches = async (itemCode: string) => {
     if (!itemCode || !project?.meta?.['بند الميزانية']) return;
     
-    const otherBatches = FakeApi.getItemAvailabilityInOtherBatches(
+    const otherBatches = await SupabaseApi.getItemAvailabilityInOtherBatches(
       itemCode, 
       project.meta['بند الميزانية']
     );
@@ -286,23 +343,26 @@ const ProjectDetail = () => {
     toast.success('Requirements exported to CSV');
   };
 
-  const handleImportProject = (result: ProjectWorkbookResult) => {
+  const handleImportProject = async (result: ProjectWorkbookResult) => {
     if (!project) return;
 
     // Import requirements
-    result.requirements.forEach(reqData => {
+    for (const reqData of result.requirements) {
       const existing = requirements.find(r => r.item_code === reqData.item_code);
       const timestamp = new Date().toISOString();
       
-      const requirement: ProjectRequirement = {
-        id: existing?.id || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        ...reqData,
-        created_at: existing?.created_at || timestamp,
-        updated_at: timestamp
-      };
-      
-      FakeApi.upsertRequirement(requirement);
-    });
+      if (existing) {
+        const requirement: ProjectRequirement = {
+          ...existing,
+          ...reqData,
+          updated_at: timestamp
+        };
+        
+        await SupabaseApi.upsertRequirement(requirement);
+      } else {
+        await SupabaseApi.createRequirement(reqData);
+      }
+    }
 
     // Import metadata (handle [CLEAR] markers)
     const updatedProject = { ...project };
@@ -317,10 +377,10 @@ const ProjectDetail = () => {
       }
     });
 
-    FakeApi.upsertProject(updatedProject);
+    await SupabaseApi.upsertProject(updatedProject);
     
     // Refresh data
-    loadData();
+    await loadData();
     onProjectUpdated();
     
     toast.success(`Imported ${result.requirements.length} requirements and updated metadata`);
@@ -379,21 +439,21 @@ const ProjectDetail = () => {
             withdrawn_qty: allocation.new_withdrawn,
             updated_at: new Date().toISOString()
           };
-          FakeApi.upsertRequirement(updatedReq);
+          await SupabaseApi.upsertRequirement(updatedReq);
           updatedCount++;
         }
       }
     }
 
     // Refresh data to get updated computed values
-    loadData();
+    await loadData();
     
     toast.success(`Auto allocation completed: ${updatedCount} items updated`);
   };
 
-  const onProjectUpdated = () => {
+  const onProjectUpdated = async () => {
     if (!id) return;
-    const projects = FakeApi.listProjects();
+    const projects = await SupabaseApi.listProjects();
     const updatedProject = projects.find(p => p.project_id === id);
     if (updatedProject) {
       setProject(updatedProject);
@@ -406,6 +466,31 @@ const ProjectDetail = () => {
 
   return (
     <div className="space-y-6">
+      {isLoading ? (
+        <>
+          {/* Header Skeleton */}
+          <div className="flex items-center space-x-4">
+            <Skeleton className="h-10 w-10" />
+            <div className="flex-1">
+              <Skeleton className="h-8 w-64 mb-2" />
+              <div className="flex space-x-2">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-6 w-24" />
+                <Skeleton className="h-6 w-28" />
+              </div>
+            </div>
+          </div>
+          
+          {/* Content Skeletons */}
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </>
+      ) : !project ? (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">Project not found</p>
+        </div>
+      ) : (
+        <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -594,7 +679,7 @@ const ProjectDetail = () => {
                   </TableCell>
                   <TableCell>
                     {(() => {
-                      const otherBatchesQty = getOtherBatchesQuantity(req.item_code);
+                      const otherBatchesQty = otherBatchesQuantities[req.item_code] || 0;
                       
                       if (!req.item_code || otherBatchesQty === 0) {
                         return <div className="text-xs text-muted-foreground">-</div>;
@@ -702,6 +787,8 @@ const ProjectDetail = () => {
         allocations={allocationPreviews}
         projectName={project.name}
       />
+        </>
+      )}
     </div>
   );
 };

@@ -64,6 +64,15 @@ export function allocateAll({ projects, inventory, requirements }: AllocationInp
       }
     });
     
+    // Subtract already withdrawn quantities from each batch
+    sortedRequirements.forEach(req => {
+      const projectBudgetItem = projectBatches.get(req.project_id) || '';
+      if (projectBudgetItem && req.withdrawn_qty > 0) {
+        const currentBalance = batchBalances.get(projectBudgetItem) || 0;
+        batchBalances.set(projectBudgetItem, currentBalance - req.withdrawn_qty);
+      }
+    });
+    
     // Distribute available balance to projects in priority order
     sortedRequirements.forEach(req => {
       const priority = projectPriorityMap.get(req.project_id) ?? 999;

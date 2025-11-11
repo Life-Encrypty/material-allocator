@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { BarChart3, Package, AlertTriangle, TrendingUp, Search, Filter, Download, ArrowUpDown } from 'lucide-react';
-import { FakeApi } from '@/api/FakeApi';
+import { SupabaseApi } from '@/api/SupabaseApi';
 import { exportToExcel } from '@/utils/xlsx';
 import type { ProjectItemComputed, InventoryRow, Material, Project } from '@/domain/types';
 
@@ -50,6 +51,7 @@ const Dashboard = () => {
   const [groupingMode, setGroupingMode] = useState<GroupingMode>('item_code');
   const [sortField, setSortField] = useState<SortField>('missing');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     loadData();
@@ -58,12 +60,15 @@ const Dashboard = () => {
   useEffect(() => {
     if (projects.length > 0) {
       // Recompute aggregations when projects data is available
-      const computed = FakeApi.getComputedPerProject();
-      const inv = FakeApi.getCurrentInventory();
-      const mats = FakeApi.listMaterials();
-      
-      aggregateByItemCode(computed, inv, mats);
-      aggregateByProject(computed, projects);
+      const recomputeData = async () => {
+        const computed = await SupabaseApi.getComputedPerProject();
+        const inv = await SupabaseApi.getCurrentInventory();
+        const mats = await SupabaseApi.listMaterials();
+        
+        aggregateByItemCode(computed, inv, mats);
+        aggregateByProject(computed, projects);
+      };
+      recomputeData();
     }
   }, [projects]);
 
@@ -71,20 +76,25 @@ const Dashboard = () => {
     filterAndSortData();
   }, [aggregatedItems, aggregatedProjects, searchQuery, showOnlyMissing, groupingMode, sortField, sortDirection]);
 
-  const loadData = () => {
-    const computed = FakeApi.getComputedPerProject();
-    const inv = FakeApi.getCurrentInventory();
-    const mats = FakeApi.listMaterials();
-    const projs = FakeApi.listProjects();
-    
-    setComputedData(computed);
-    setInventory(inv);
-    setMaterials(mats);
-    setProjects(projs);
-    
-    // Aggregate by both item_code and project
-    aggregateByItemCode(computed, inv, mats);
-    aggregateByProject(computed, projs);
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const computed = await SupabaseApi.getComputedPerProject();
+      const inv = await SupabaseApi.getCurrentInventory();
+      const mats = await SupabaseApi.listMaterials();
+      const projs = await SupabaseApi.listProjects();
+      
+      setComputedData(computed);
+      setInventory(inv);
+      setMaterials(mats);
+      setProjects(projs);
+      
+      // Aggregate by both item_code and project
+      aggregateByItemCode(computed, inv, mats);
+      aggregateByProject(computed, projs);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const aggregateByItemCode = (computed: ProjectItemComputed[], inventory: InventoryRow[], materials: Material[]) => {
@@ -316,22 +326,39 @@ const Dashboard = () => {
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {summaryCards.map((card) => (
-          <Card key={card.title}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                {card.title}
-              </CardTitle>
-              <card.icon className={`h-4 w-4 ${card.color}`} />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{card.value}</div>
-              <p className="text-xs text-muted-foreground">
-                {card.description}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+        {isLoading ? (
+          <>
+            {[1, 2, 3, 4].map(i => (
+              <Card key={i}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-4 rounded" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-8 w-20 mb-2" />
+                  <Skeleton className="h-3 w-32" />
+                </CardContent>
+              </Card>
+            ))}
+          </>
+        ) : (
+          summaryCards.map((card) => (
+            <Card key={card.title}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  {card.title}
+                </CardTitle>
+                <card.icon className={`h-4 w-4 ${card.color}`} />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{card.value}</div>
+                <p className="text-xs text-muted-foreground">
+                  {card.description}
+                </p>
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
 
       {/* Top Shortages Table */}

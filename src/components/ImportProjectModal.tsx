@@ -6,7 +6,20 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Upload, AlertTriangle, CheckCircle } from 'lucide-react';
-import { parseProjectWorkbook, type ProjectWorkbookResult } from '@/utils/xlsx';
+import { supabase } from '@/integrations/supabase/client';
+
+type ProjectWorkbookResult = {
+  requirements: Array<{
+    project_id: string;
+    item_code: string;
+    required_qty: number;
+    withdrawn_qty: number;
+    exclude_from_allocation?: boolean;
+    notes?: string;
+  }>;
+  metadata: Record<string, string>;
+  warnings: string[];
+};
 import { toast } from 'sonner';
 
 interface ImportProjectModalProps {
@@ -34,8 +47,41 @@ export const ImportProjectModal = ({ isOpen, onClose, onImport, projectId }: Imp
     setIsProcessing(true);
 
     try {
-      const result = await parseProjectWorkbook(selectedFile, projectId);
-      setPreview(result);
+      // Upload to edge function for parsing
+      const formData = new FormData();
+      formData.append('files', selectedFile);
+      
+      const { data, error } = await supabase.functions.invoke('import-projects', {
+        body: formData
+      });
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      if (!data.success || !data.results || data.results.length === 0) {
+        throw new Error(data.error || 'Import failed');
+      }
+      
+      const result = data.results[0];
+      
+      if (result.status === 'error') {
+        throw new Error(result.error || 'Import failed');
+      }
+      
+      // Convert edge function result to preview format
+      const parsedResult: ProjectWorkbookResult = {
+        requirements: Array(result.requirements_count || 0).fill({
+          project_id: projectId,
+          item_code: '',
+          required_qty: 0,
+          withdrawn_qty: 0
+        }),
+        metadata: {},
+        warnings: result.warnings || []
+      };
+      
+      setPreview(parsedResult);
     } catch (error) {
       toast.error(`Failed to parse file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setFile(null);

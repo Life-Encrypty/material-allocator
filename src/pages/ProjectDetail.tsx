@@ -15,8 +15,21 @@ import { OtherBatchesDialog } from '@/components/OtherBatchesDialog';
 import { AutoAllocationDialog } from '@/components/AutoAllocationDialog';
 import { useRealtimeRequirements } from '@/hooks/useRealtimeRequirements';
 import { toast } from 'sonner';
-import { exportProjectTemplate, type ProjectWorkbookResult } from '@/utils/xlsx';
+import { exportProjectTemplate } from '@/utils/xlsx';
 import type { Project, ProjectRequirement, Material, ProjectItemComputed, InventoryRow } from '@/domain/types';
+
+type ProjectWorkbookResult = {
+  requirements: Array<{
+    project_id: string;
+    item_code: string;
+    required_qty: number;
+    withdrawn_qty: number;
+    exclude_from_allocation?: boolean;
+    notes?: string;
+  }>;
+  metadata: Record<string, string>;
+  warnings: string[];
+};
 
 const ProjectDetail = () => {
   const { id } = useParams<{ id: string }>();

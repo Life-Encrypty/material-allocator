@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast'
 import { Plus, Search, Package, AlertTriangle, TrendingUp, TrendingDown, Upload, FileSpreadsheet, Trash2, Download } from 'lucide-react'
 import { SupabaseApi } from '@/api/SupabaseApi'
 import { useRealtimeInventory } from '@/hooks/useRealtimeInventory'
-import { parseInventory } from '@/utils/xlsx'
+import { supabase } from '@/integrations/supabase/client'
 import { K } from '@/storage/keys'
 import type { InventorySnapshot, InventoryRow, Material } from '@/domain/types'
 
@@ -107,45 +107,28 @@ const Inventory = () => {
     setIsUploading(true)
     
     try {
-      const result = await parseInventory(file)
+      // Upload file to edge function
+      const formData = new FormData()
+      formData.append('file', file)
       
-      // Extract rows from the result (without id - database will generate)
-      const rows = (result as any).rows as Omit<InventoryRow, 'id'>[]
-      
-      // Create snapshot object without the rows property
-      const { rows: _, ...snapshotData } = result as any
-      const snapshot: InventorySnapshot = snapshotData
-      
-      // Extract unique materials from inventory and create them first
-      const uniqueItemCodes = [...new Set(rows.map(r => r.item_code))]
-      const materials: Material[] = uniqueItemCodes.map(item_code => {
-        const row = rows.find(r => r.item_code === item_code)!
-        return {
-          item_code,
-          name: row.notes || item_code,
-          description: row.notes || '',
-          category: 'Imported',
-          unit: 'Unit',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
+      const { data, error } = await supabase.functions.invoke('import-inventory', {
+        body: formData
       })
       
-      // Upsert materials first to satisfy foreign key constraint
-      for (const material of materials) {
-        await SupabaseApi.upsertMaterial(material)
+      if (error) {
+        throw new Error(error.message)
       }
       
-      // Save snapshot and rows to Supabase
-      await SupabaseApi.setActiveSnapshot(snapshot)
-      await SupabaseApi.upsertInventoryRows(rows)
+      if (!data.success) {
+        throw new Error(data.error || 'Import failed')
+      }
       
       // Reload data
-      loadInventoryData()
+      await loadInventoryData()
       
       toast({
         title: "Import successful",
-        description: `Imported ${rows.length} inventory items from ${file.name}`,
+        description: `Imported ${data.snapshot.item_count} inventory items from ${file.name}`,
       })
       
       // Clear file input

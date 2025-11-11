@@ -188,20 +188,27 @@ const Inventory = () => {
     const row = currentInventory.find(r => r.id === rowId);
     if (!row) return;
 
+    const updatedRow = {
+      ...row,
+      batch_number: editValues.batch_number,
+      current_balance: parseFloat(editValues.current_balance) || 0
+    };
+
+    // Optimistically update the UI
+    setCurrentInventory(prev => prev.map(r => r.id === rowId ? updatedRow : r));
+    setEditingRow(null);
+
     try {
-      await SupabaseApi.upsertInventoryRow({
-        ...row,
-        batch_number: editValues.batch_number,
-        current_balance: parseFloat(editValues.current_balance) || 0
-      });
+      await SupabaseApi.upsertInventoryRow(updatedRow);
 
       toast({
         title: "Updated",
         description: "Inventory row updated successfully"
       });
-
-      setEditingRow(null);
     } catch (error) {
+      // Revert on error
+      setCurrentInventory(prev => prev.map(r => r.id === rowId ? row : r));
+      
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to update row",

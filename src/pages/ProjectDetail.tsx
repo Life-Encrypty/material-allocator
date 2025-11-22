@@ -308,40 +308,23 @@ const ProjectDetail = () => {
     setShowOtherBatchesModal(true);
   };
 
-  const exportToCSV = () => {
+  const handleExportXLSX = async () => {
     if (!project) return;
 
-    const csvData = filteredRequirements.map(req => {
-      const computed = getComputedValues(req.item_code);
-      return {
-        'Complete/Exclude': req.exclude_from_allocation ? 'Yes' : 'No',
-        'Item Code': req.item_code,
-        'Description': getMaterialDescription(req.item_code),
-        'Required Qty': req.required_qty,
-        'Withdrawn Qty': req.withdrawn_qty,
-        'Allocatable Qty': req.exclude_from_allocation ? 0 : computed.allocatable_qty,
-        'Missing Qty': req.exclude_from_allocation ? 0 : computed.missing_qty,
-        'Notes': req.notes || ''
-      };
-    });
+    try {
+      // Create a map of item codes to descriptions
+      const descriptions: Record<string, string> = {};
+      requirements.forEach(req => {
+        if (req.item_code) {
+          descriptions[req.item_code] = getMaterialDescription(req.item_code);
+        }
+      });
 
-    const headers = Object.keys(csvData[0] || {});
-    const csvContent = [
-      headers.join(','),
-      ...csvData.map(row => headers.map(header =>
-        `"${row[header as keyof typeof row]}"`.replace(/"/g, '""')
-      ).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `project_${project.project_id}_requirements.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    toast.success('Requirements exported to CSV');
+      await exportProjectTemplate(project, requirements, descriptions);
+      toast.success('Project exported to XLSX');
+    } catch (error) {
+      toast.error('Failed to export project');
+    }
   };
 
   const handleImportProject = async (result: ProjectWorkbookResult) => {
@@ -385,17 +368,6 @@ const ProjectDetail = () => {
     onProjectUpdated();
 
     toast.success(`Imported ${result.requirements.length} requirements and updated metadata`);
-  };
-
-  const handleExportTemplate = async () => {
-    if (!project) return;
-
-    try {
-      await exportProjectTemplate(project, requirements);
-      toast.success('Project template exported');
-    } catch (error) {
-      toast.error('Failed to export template');
-    }
   };
 
   const handleAutoAllocation = () => {
@@ -567,15 +539,6 @@ const ProjectDetail = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={exportToCSV}
-                disabled={filteredRequirements.length === 0}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export CSV
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
                 onClick={() => setShowImportModal(true)}
               >
                 <Upload className="h-4 w-4 mr-2" />
@@ -584,10 +547,10 @@ const ProjectDetail = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleExportTemplate}
+                onClick={handleExportXLSX}
               >
                 <FileDown className="h-4 w-4 mr-2" />
-                Download Template
+                Export XLSX
               </Button>
             </div>
             <div className="text-sm text-muted-foreground">

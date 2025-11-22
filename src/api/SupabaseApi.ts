@@ -1,12 +1,12 @@
 import { supabase } from '@/integrations/supabase/client';
 import { allocateAll } from '@/logic/allocation';
-import type { 
-  Project, 
-  Material, 
-  InventoryRow, 
-  InventorySnapshot, 
-  ProjectRequirement, 
-  ProjectItemComputed 
+import type {
+  Project,
+  Material,
+  InventoryRow,
+  InventorySnapshot,
+  ProjectRequirement,
+  ProjectItemComputed
 } from '@/domain/types';
 
 class SupabaseApiService {
@@ -16,12 +16,12 @@ class SupabaseApiService {
       .from('projects')
       .select('*')
       .order('priority', { ascending: true });
-    
+
     if (error) {
       console.error('Error fetching projects:', error);
       return [];
     }
-    
+
     return (data || []) as Project[];
   }
 
@@ -29,7 +29,7 @@ class SupabaseApiService {
     const { error } = await supabase
       .from('projects')
       .upsert(project, { onConflict: 'project_id' });
-    
+
     if (error) {
       console.error('Error upserting project:', error);
       throw error;
@@ -41,7 +41,7 @@ class SupabaseApiService {
       .from('projects')
       .delete()
       .eq('project_id', projectId);
-    
+
     if (error) {
       console.error('Error deleting project:', error);
       throw error;
@@ -54,12 +54,12 @@ class SupabaseApiService {
       .from('materials')
       .select('*')
       .order('item_code', { ascending: true });
-    
+
     if (error) {
       console.error('Error fetching materials:', error);
       return [];
     }
-    
+
     return data || [];
   }
 
@@ -67,7 +67,7 @@ class SupabaseApiService {
     const { error } = await supabase
       .from('materials')
       .upsert(material, { onConflict: 'item_code' });
-    
+
     if (error) {
       console.error('Error upserting material:', error);
       throw error;
@@ -79,12 +79,12 @@ class SupabaseApiService {
     const { data, error } = await supabase
       .from('project_requirements')
       .select('*');
-    
+
     if (error) {
       console.error('Error fetching requirements:', error);
       return [];
     }
-    
+
     return data || [];
   }
 
@@ -92,7 +92,7 @@ class SupabaseApiService {
     const { error } = await supabase
       .from('project_requirements')
       .upsert(requirement, { onConflict: 'id' });
-    
+
     if (error) {
       console.error('Error upserting requirement:', error);
       throw error;
@@ -103,7 +103,7 @@ class SupabaseApiService {
     const { error } = await supabase
       .from('project_requirements')
       .insert(input);
-    
+
     if (error) {
       console.error('Error creating requirement:', error);
       throw error;
@@ -115,7 +115,7 @@ class SupabaseApiService {
       .from('project_requirements')
       .delete()
       .eq('id', requirementId);
-    
+
     if (error) {
       console.error('Error deleting requirement:', error);
       throw error;
@@ -128,27 +128,46 @@ class SupabaseApiService {
       .from('inventory_snapshots')
       .select('*')
       .order('created_at', { ascending: false });
-    
+
     if (error) {
       console.error('Error fetching snapshots:', error);
       return [];
     }
-    
+
     return data || [];
   }
 
   async getSnapshotRows(snapshotId: string): Promise<InventoryRow[]> {
-    const { data, error } = await supabase
-      .from('inventory_rows')
-      .select('*')
-      .eq('snapshot_id', snapshotId);
-    
-    if (error) {
-      console.error('Error fetching snapshot rows:', error);
-      return [];
+    let allRows: InventoryRow[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('inventory_rows')
+        .select('*')
+        .eq('snapshot_id', snapshotId)
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (error) {
+        console.error('Error fetching snapshot rows:', error);
+        return allRows; // Return what we have so far
+      }
+
+      if (data) {
+        allRows = [...allRows, ...data];
+        if (data.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      } else {
+        hasMore = false;
+      }
     }
-    
-    return data || [];
+
+    return allRows;
   }
 
   async getActiveSnapshotId(): Promise<string | null> {
@@ -157,7 +176,7 @@ class SupabaseApiService {
       .select('snapshot_id')
       .eq('is_active', true)
       .single();
-    
+
     if (error) {
       if (error.code === 'PGRST116') {
         // No active snapshot found
@@ -166,7 +185,7 @@ class SupabaseApiService {
       console.error('Error fetching active snapshot:', error);
       return null;
     }
-    
+
     return data?.snapshot_id || null;
   }
 
@@ -175,7 +194,7 @@ class SupabaseApiService {
     const { error } = await supabase
       .from('inventory_snapshots')
       .upsert({ ...snapshot, is_active: true }, { onConflict: 'snapshot_id' });
-    
+
     if (error) {
       console.error('Error setting active snapshot:', error);
       throw error;
@@ -186,7 +205,7 @@ class SupabaseApiService {
     const { error } = await supabase
       .from('inventory_rows')
       .upsert(row, { onConflict: 'id' });
-    
+
     if (error) {
       console.error('Error upserting inventory row:', error);
       throw error;
@@ -195,11 +214,11 @@ class SupabaseApiService {
 
   async upsertInventoryRows(rows: Omit<InventoryRow, 'id'>[]): Promise<void> {
     if (rows.length === 0) return;
-    
+
     const { error } = await supabase
       .from('inventory_rows')
       .upsert(rows);
-    
+
     if (error) {
       console.error('Error upserting inventory rows:', error);
       throw error;
@@ -211,7 +230,7 @@ class SupabaseApiService {
     const projects = await this.listProjects();
     const requirements = await this.listRequirements();
     const inventory = await this.getCurrentInventory();
-    
+
     return allocateAll({
       projects,
       inventory,
@@ -228,49 +247,49 @@ class SupabaseApiService {
   // Search projects by name, id, or metadata
   async searchProjects(query: string): Promise<Project[]> {
     if (!query.trim()) return this.listProjects();
-    
+
     const searchTerm = `%${query.toLowerCase()}%`;
-    
+
     // Search in name and project_id
     const { data, error } = await supabase
       .from('projects')
       .select('*')
       .or(`name.ilike.${searchTerm},project_id.ilike.${searchTerm}`)
       .order('priority', { ascending: true });
-    
+
     if (error) {
       console.error('Error searching projects:', error);
       return [];
     }
-    
+
     // Also search in metadata fields (client-side)
     const allProjects = await this.listProjects();
     const metaMatches = allProjects.filter(project => {
       if (project.meta) {
-        return Object.values(project.meta).some(value => 
+        return Object.values(project.meta).some(value =>
           value && value.toLowerCase().includes(query.toLowerCase())
         );
       }
       return false;
     });
-    
+
     // Combine and deduplicate results
     const combined = [...((data || []) as Project[]), ...metaMatches];
     const uniqueProjects = Array.from(
       new Map(combined.map(p => [p.project_id, p])).values()
     );
-    
+
     return uniqueProjects;
   }
 
   // Get item availability in other batches (excluding specified batch)
   async getItemAvailabilityInOtherBatches(
-    itemCode: string, 
+    itemCode: string,
     excludeBatch: string
   ): Promise<InventoryRow[]> {
     const inventory = await this.getCurrentInventory();
-    return inventory.filter(row => 
-      row.item_code === itemCode && 
+    return inventory.filter(row =>
+      row.item_code === itemCode &&
       row.batch_number !== excludeBatch &&
       row.current_balance > 0
     );

@@ -89,6 +89,28 @@ class SupabaseApiService {
   }
 
   async upsertRequirement(requirement: ProjectRequirement): Promise<void> {
+    // Ensure material exists to satisfy foreign key constraint
+    if (requirement.item_code) {
+      const { data: material } = await supabase
+        .from('materials')
+        .select('item_code')
+        .eq('item_code', requirement.item_code)
+        .single();
+
+      if (!material) {
+        console.log(`Auto-creating missing material: ${requirement.item_code}`);
+        await this.upsertMaterial({
+          item_code: requirement.item_code,
+          name: requirement.item_code, // Default name
+          category: 'Unknown',
+          unit: 'Each',
+          description: 'Auto-created from requirement',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      }
+    }
+
     const { error } = await supabase
       .from('project_requirements')
       .upsert(requirement, { onConflict: 'id' });
@@ -100,6 +122,28 @@ class SupabaseApiService {
   }
 
   async createRequirement(input: Omit<ProjectRequirement, 'id' | 'created_at' | 'updated_at'>): Promise<void> {
+    // Ensure material exists to satisfy foreign key constraint
+    if (input.item_code) {
+      const { data: material } = await supabase
+        .from('materials')
+        .select('item_code')
+        .eq('item_code', input.item_code)
+        .single();
+
+      if (!material) {
+        console.log(`Auto-creating missing material: ${input.item_code}`);
+        await this.upsertMaterial({
+          item_code: input.item_code,
+          name: input.item_code, // Default name
+          category: 'Unknown',
+          unit: 'Each',
+          description: 'Auto-created from requirement',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      }
+    }
+
     const { error } = await supabase
       .from('project_requirements')
       .insert(input);

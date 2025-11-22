@@ -631,15 +631,23 @@ const ProjectDetail = () => {
                         />
                       </TableCell>
                       <TableCell>
-                        <SearchableCombobox
-                          options={getInventoryOptions()}
-                          value={req.item_code}
-                          onValueChange={(value) => handleItemCodeSelect(value, req)}
-                          placeholder="Select item code..."
-                          emptyText="No items found in active inventory."
-                          className="border-none p-1 h-auto min-w-[200px]"
-                          disabled={isExcluded}
-                        />
+                        <div className="flex items-center gap-2">
+                          <SearchableCombobox
+                            options={getInventoryOptions()}
+                            value={req.item_code}
+                            onValueChange={(value) => handleItemCodeSelect(value, req)}
+                            placeholder="Select item code..."
+                            emptyText="No items found."
+                            className="border-none p-1 h-auto min-w-[200px]"
+                            disabled={isExcluded}
+                            allowCustom={true}
+                          />
+                          {req.item_code && !inventory.some(i => i.item_code === req.item_code) && !materials.some(m => m.item_code === req.item_code) && (
+                            <Badge variant="destructive" className="h-5 text-[10px] px-1">
+                              Unknown
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="text-sm text-foreground min-w-[200px] p-1">

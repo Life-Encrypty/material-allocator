@@ -13,6 +13,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { SupabaseApi } from '@/api/SupabaseApi';
 import AddProjectModal from '@/components/AddProjectModal';
 import { ProjectSearchForm } from '@/components/ProjectSearchForm';
+import { ProjectStatusSelect } from '@/components/ProjectStatusSelect';
 import { BulkProjectImporter } from '@/components/BulkProjectImporter';
 import { toast } from 'sonner';
 import type { Project } from '@/domain/types';
@@ -22,9 +23,10 @@ interface SortableProjectProps {
   project: Project;
   onView: (projectId: string) => void;
   onDelete: (projectId: string) => void;
+  onStatusChange: (projectId: string, status: Project['status']) => void;
 }
 
-const SortableProject = ({ project, onView, onDelete }: SortableProjectProps) => {
+const SortableProject = ({ project, onView, onDelete, onStatusChange }: SortableProjectProps) => {
   const {
     attributes,
     listeners,
@@ -56,15 +58,15 @@ const SortableProject = ({ project, onView, onDelete }: SortableProjectProps) =>
   };
 
   return (
-    <Card 
-      ref={setNodeRef} 
-      style={style} 
+    <Card
+      ref={setNodeRef}
+      style={style}
       className="hover:shadow-md transition-shadow cursor-pointer"
     >
       <CardHeader>
         <div className="flex justify-between items-start">
           <div className="flex items-center space-x-3 flex-1">
-            <div 
+            <div
               {...attributes}
               {...listeners}
               className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded"
@@ -88,9 +90,12 @@ const SortableProject = ({ project, onView, onDelete }: SortableProjectProps) =>
               )}
             </div>
           </div>
-          <Badge className={getStatusColor(project.status)}>
-            {project.status}
-          </Badge>
+          <div onClick={(e) => e.stopPropagation()}>
+            <ProjectStatusSelect
+              status={project.status}
+              onStatusChange={(newStatus) => onStatusChange(project.project_id, newStatus)}
+            />
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -99,8 +104,8 @@ const SortableProject = ({ project, onView, onDelete }: SortableProjectProps) =>
             Created: {new Date(project.created_at).toLocaleDateString()}
           </div>
           <div className="flex items-center space-x-2">
-            <Button 
-              size="sm" 
+            <Button
+              size="sm"
               onClick={(e) => {
                 e.stopPropagation();
                 onView(project.project_id);
@@ -109,11 +114,11 @@ const SortableProject = ({ project, onView, onDelete }: SortableProjectProps) =>
               <Eye className="h-4 w-4 mr-2" />
               View
             </Button>
-            
+
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button 
-                  size="sm" 
+                <Button
+                  size="sm"
                   variant="destructive"
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -129,7 +134,7 @@ const SortableProject = ({ project, onView, onDelete }: SortableProjectProps) =>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction 
+                  <AlertDialogAction
                     onClick={() => onDelete(project.project_id)}
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   >
@@ -153,7 +158,7 @@ const Projects = () => {
   const [showBulkImporter, setShowBulkImporter] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -189,20 +194,20 @@ const Projects = () => {
     if (over && active.id !== over.id) {
       const oldIndex = projects.findIndex(p => p.project_id === active.id);
       const newIndex = projects.findIndex(p => p.project_id === over.id);
-      
+
       const newProjects = arrayMove(projects, oldIndex, newIndex);
-      
+
       // Update priorities based on new order (lower index = higher priority, 0 = highest)
       const updatedProjects = newProjects.map((project, index) => ({
         ...project,
         priority: index
       }));
-      
+
       // Save each project with new priority
       for (const project of updatedProjects) {
         await SupabaseApi.upsertProject(project);
       }
-      
+
       setProjects(updatedProjects);
       loadProjects(); // Reload to sync with all projects
       toast.success('Project order updated');
@@ -234,13 +239,26 @@ const Projects = () => {
     setProjects(allProjects);
   };
 
+  const handleStatusChange = async (projectId: string, newStatus: Project['status']) => {
+    const project = projects.find(p => p.project_id === projectId);
+    if (project) {
+      const updated = { ...project, status: newStatus };
+      // Optimistic update
+      setProjects(prev => prev.map(p => p.project_id === projectId ? updated : p));
+      setAllProjects(prev => prev.map(p => p.project_id === projectId ? updated : p));
+
+      await SupabaseApi.upsertProject(updated);
+      toast.success(`Project status updated to ${newStatus}`);
+    }
+  };
+
   const getProjectStats = () => {
     const total = allProjects.length;
     const completed = allProjects.filter(p => p.status === 'Completed').length;
     const planning = allProjects.filter(p => p.status === 'Planning').length;
     const onHold = allProjects.filter(p => p.status === 'On Hold').length;
     const inProgress = allProjects.filter(p => p.status === 'In Progress').length;
-    
+
     return { total, completed, planning, onHold, inProgress };
   };
 
@@ -278,15 +296,15 @@ const Projects = () => {
 
     // Create workbook with two worksheets
     const wb = XLSX.utils.book_new();
-    
+
     // Add requirements worksheet
     const requirementsWs = XLSX.utils.json_to_sheet(requirementsTemplate);
     XLSX.utils.book_append_sheet(wb, requirementsWs, 'Requirements');
-    
+
     // Add metadata worksheet
     const metadataWs = XLSX.utils.json_to_sheet(metadataTemplate);
     XLSX.utils.book_append_sheet(wb, metadataWs, 'Metadata');
-    
+
     // Generate and download the file
     XLSX.writeFile(wb, 'project-requirements-template.xlsx');
     toast.success('Empty project template downloaded');
@@ -302,14 +320,14 @@ const Projects = () => {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button 
+          <Button
             variant="outline"
             onClick={handleDownloadTemplate}
           >
             <Download className="h-4 w-4 mr-2" />
             Download Template
           </Button>
-          <Button 
+          <Button
             variant="outline"
             onClick={() => setShowBulkImporter(true)}
           >
@@ -324,7 +342,7 @@ const Projects = () => {
       </div>
 
       {/* Search Form */}
-      <ProjectSearchForm 
+      <ProjectSearchForm
         onSearch={handleSearch}
         hasActiveFilter={!!searchQuery}
         onClear={handleClearSearch}
@@ -361,24 +379,25 @@ const Projects = () => {
             ))}
           </>
         ) : (
-          <DndContext 
+          <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragEnd={handleDragEnd}
           >
             <SortableContext items={projects.map(p => p.project_id)} strategy={verticalListSortingStrategy}>
               {projects.map((project) => (
-                <SortableProject 
-                  key={project.project_id} 
-                  project={project} 
+                <SortableProject
+                  key={project.project_id}
+                  project={project}
                   onView={handleViewProject}
                   onDelete={handleDeleteProject}
+                  onStatusChange={handleStatusChange}
                 />
               ))}
             </SortableContext>
           </DndContext>
         )}
-        
+
         {!isLoading && projects.length === 0 && (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
@@ -431,7 +450,7 @@ const Projects = () => {
       </Card>
 
       {/* Add Project Modal */}
-      <AddProjectModal 
+      <AddProjectModal
         open={showAddModal}
         onOpenChange={setShowAddModal}
         onProjectAdded={loadProjects}

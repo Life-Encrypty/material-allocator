@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Plus, Trash2, Filter, Download, Upload, FileDown, AlertTriangle, Zap } from 'lucide-react';
 import { SupabaseApi } from '@/api/SupabaseApi';
 import { ProjectMetadataPanel } from '@/components/ProjectMetadataPanel';
+import { ProjectStatusSelect } from '@/components/ProjectStatusSelect';
 import { ImportProjectModal } from '@/components/ImportProjectModal';
 import { SearchableCombobox } from '@/components/SearchableCombobox';
 import { OtherBatchesDialog } from '@/components/OtherBatchesDialog';
@@ -78,7 +79,7 @@ const ProjectDetail = () => {
 
   useEffect(() => {
     if (!id) return;
-    
+
     // Load project
     const loadProject = async () => {
       setIsLoading(true);
@@ -97,25 +98,25 @@ const ProjectDetail = () => {
         setIsLoading(false);
       }
     };
-    
+
     loadProject();
   }, [id, navigate]);
 
   const loadData = async () => {
     if (!id) return;
-    
+
     const reqs = (await SupabaseApi.listRequirements()).filter(r => r.project_id === id);
     setRequirements(reqs);
-    
+
     const mats = await SupabaseApi.listMaterials();
     setMaterials(mats);
-    
+
     const inv = await SupabaseApi.getCurrentInventory();
     setInventory(inv);
-    
+
     const computed = (await SupabaseApi.getComputedPerProject()).filter(c => c.project_id === id);
     setComputedData(computed);
-    
+
     // Compute other batches quantities for all items
     if (project?.meta?.['بند الميزانية']) {
       const quantities: Record<string, number> = {};
@@ -134,13 +135,13 @@ const ProjectDetail = () => {
 
   const getMaterialDescription = (itemCode: string): string => {
     if (!itemCode) return '';
-    
+
     // First try to find the material in the materials database
     const material = materials.find(m => m.item_code === itemCode);
     if (material && (material.description || material.name)) {
       return material.description || material.name;
     }
-    
+
     // If not found in materials, look in inventory for the description
     const inventoryItem = inventory.find(inv => inv.item_code === itemCode);
     if (inventoryItem) {
@@ -149,11 +150,11 @@ const ProjectDetail = () => {
       if (existingMaterial) {
         return existingMaterial.description || existingMaterial.name || '';
       }
-      
+
       // Return empty string for now, let the actual description come from the proper data source
       return '';
     }
-    
+
     return '';
   };
 
@@ -167,21 +168,21 @@ const ProjectDetail = () => {
 
   const updateRequirement = async (requirement: ProjectRequirement, field: keyof ProjectRequirement, value: any) => {
     const updated = { ...requirement, [field]: value };
-    
+
     // Clamp withdrawn_qty to 0..required_qty and show warning if clamped
     if (field === 'withdrawn_qty' || field === 'required_qty') {
       const requiredQty = field === 'required_qty' ? value : updated.required_qty;
       const withdrawnQty = field === 'withdrawn_qty' ? value : updated.withdrawn_qty;
-      
+
       const clampedWithdrawn = Math.max(0, Math.min(withdrawnQty, requiredQty));
-      
+
       if (field === 'withdrawn_qty' && withdrawnQty > requiredQty) {
         toast.error(`Withdrawn quantity cannot exceed required quantity (${requiredQty}). Value clamped to ${requiredQty}.`);
       }
-      
+
       updated.withdrawn_qty = clampedWithdrawn;
     }
-    
+
     await SupabaseApi.upsertRequirement(updated);
     await loadData();
     toast.success('Requirement updated');
@@ -189,13 +190,13 @@ const ProjectDetail = () => {
 
   const addRequirement = async () => {
     console.log('Add Row button clicked');
-    
+
     if (!project) {
       console.error('No project found');
       toast.error('Project not loaded');
       return;
     }
-    
+
     try {
       const newReqInput = {
         project_id: project.project_id,
@@ -205,7 +206,7 @@ const ProjectDetail = () => {
         exclude_from_allocation: false,
         notes: ''
       };
-      
+
       console.log('Creating requirement:', newReqInput);
       await SupabaseApi.createRequirement(newReqInput);
       await loadData();
@@ -223,26 +224,26 @@ const ProjectDetail = () => {
     toast.success('Requirement deleted');
   };
 
-  const filteredRequirements = showMissingOnly 
+  const filteredRequirements = showMissingOnly
     ? requirements.filter(req => !req.exclude_from_allocation && getComputedValues(req.item_code).missing_qty > 0)
     : requirements;
 
   const getInventoryOptions = () => {
     const options: Array<{ value: string; label: string; subtitle?: string }> = [];
     const uniqueItemCodes = new Set<string>();
-    
+
     // Add items from current inventory only (active snapshot)
     inventory.forEach(row => {
       if (!uniqueItemCodes.has(row.item_code)) {
         uniqueItemCodes.add(row.item_code);
-        
+
         // Try materials first, then inventory notes
         const material = materials.find(m => m.item_code === row.item_code);
         let description = material?.description || material?.name || '';
         if (!description) {
           description = row.notes || '';
         }
-        
+
         options.push({
           value: row.item_code,
           label: row.item_code,
@@ -250,18 +251,18 @@ const ProjectDetail = () => {
         });
       }
     });
-    
+
     return options;
   };
 
   const getDescriptionOptions = () => {
     const descriptionMap = new Map<string, { description: string; item_codes: string[] }>();
-    
+
     // Group by description
     inventory.forEach(row => {
       const material = materials.find(m => m.item_code === row.item_code);
       const description = material?.description || material?.name || '';
-      
+
       if (description) {
         if (descriptionMap.has(description)) {
           descriptionMap.get(description)!.item_codes.push(row.item_code);
@@ -270,7 +271,7 @@ const ProjectDetail = () => {
         }
       }
     });
-    
+
     return Array.from(descriptionMap.values()).map(({ description, item_codes }) => ({
       value: description,
       label: description,
@@ -280,10 +281,10 @@ const ProjectDetail = () => {
 
   const handleDescriptionSelect = (description: string, requirement: ProjectRequirement) => {
     // Find the item_code(s) associated with this description
-    const material = materials.find(m => 
+    const material = materials.find(m =>
       (m.description || m.name || '') === description
     );
-    
+
     if (material) {
       // Update both description and item_code
       updateRequirement(requirement, 'item_code', material.item_code);
@@ -297,19 +298,19 @@ const ProjectDetail = () => {
 
   const handleShowOtherBatches = async (itemCode: string) => {
     if (!itemCode || !project?.meta?.['بند الميزانية']) return;
-    
+
     const otherBatches = await SupabaseApi.getItemAvailabilityInOtherBatches(
-      itemCode, 
+      itemCode,
       project.meta['بند الميزانية']
     );
-    
+
     setSelectedItemForBatches({ itemCode, otherBatches });
     setShowOtherBatchesModal(true);
   };
 
   const exportToCSV = () => {
     if (!project) return;
-    
+
     const csvData = filteredRequirements.map(req => {
       const computed = getComputedValues(req.item_code);
       return {
@@ -327,7 +328,7 @@ const ProjectDetail = () => {
     const headers = Object.keys(csvData[0] || {});
     const csvContent = [
       headers.join(','),
-      ...csvData.map(row => headers.map(header => 
+      ...csvData.map(row => headers.map(header =>
         `"${row[header as keyof typeof row]}"`.replace(/"/g, '""')
       ).join(','))
     ].join('\n');
@@ -339,7 +340,7 @@ const ProjectDetail = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
+
     toast.success('Requirements exported to CSV');
   };
 
@@ -350,14 +351,14 @@ const ProjectDetail = () => {
     for (const reqData of result.requirements) {
       const existing = requirements.find(r => r.item_code === reqData.item_code);
       const timestamp = new Date().toISOString();
-      
+
       if (existing) {
         const requirement: ProjectRequirement = {
           ...existing,
           ...reqData,
           updated_at: timestamp
         };
-        
+
         await SupabaseApi.upsertRequirement(requirement);
       } else {
         await SupabaseApi.createRequirement(reqData);
@@ -378,17 +379,17 @@ const ProjectDetail = () => {
     });
 
     await SupabaseApi.upsertProject(updatedProject);
-    
+
     // Refresh data
     await loadData();
     onProjectUpdated();
-    
+
     toast.success(`Imported ${result.requirements.length} requirements and updated metadata`);
   };
 
   const handleExportTemplate = async () => {
     if (!project) return;
-    
+
     try {
       await exportProjectTemplate(project, requirements);
       toast.success('Project template exported');
@@ -434,8 +435,8 @@ const ProjectDetail = () => {
       if (allocation.change > 0) {
         const requirement = requirements.find(req => req.item_code === allocation.item_code);
         if (requirement) {
-          const updatedReq = { 
-            ...requirement, 
+          const updatedReq = {
+            ...requirement,
             withdrawn_qty: allocation.new_withdrawn,
             updated_at: new Date().toISOString()
           };
@@ -447,7 +448,7 @@ const ProjectDetail = () => {
 
     // Refresh data to get updated computed values
     await loadData();
-    
+
     toast.success(`Auto allocation completed: ${updatedCount} items updated`);
   };
 
@@ -480,7 +481,7 @@ const ProjectDetail = () => {
               </div>
             </div>
           </div>
-          
+
           {/* Content Skeletons */}
           <Skeleton className="h-32 w-full" />
           <Skeleton className="h-64 w-full" />
@@ -491,302 +492,306 @@ const ProjectDetail = () => {
         </div>
       ) : (
         <>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <Button 
-            variant="ghost" 
-            size="icon"
-            onClick={() => navigate('/projects')}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">{project.name}</h1>
-            <div className="flex items-center space-x-4 mt-2">
-              <Badge variant="outline">ID: {project.project_id}</Badge>
-              <Badge variant="secondary">Priority: {project.priority}</Badge>
-              <Badge 
-                variant={project.status === 'Completed' ? 'default' : 'outline'}
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate('/projects')}
               >
-                {project.status}
-              </Badge>
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <div>
+                <h1 className="text-3xl font-bold">{project.name}</h1>
+                <div className="flex items-center space-x-4 mt-2">
+                  <Badge variant="outline">ID: {project.project_id}</Badge>
+                  <Badge variant="secondary">Priority: {project.priority}</Badge>
+                  <ProjectStatusSelect
+                    status={project.status}
+                    onStatusChange={async (newStatus) => {
+                      const updated = { ...project, status: newStatus };
+                      setProject(updated);
+                      await SupabaseApi.upsertProject(updated);
+                      toast.success(`Project status updated to ${newStatus}`);
+                    }}
+                  />
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Project Metadata Panel */}
-      <ProjectMetadataPanel project={project} onProjectUpdated={onProjectUpdated} />
+          {/* Project Metadata Panel */}
+          <ProjectMetadataPanel project={project} onProjectUpdated={onProjectUpdated} />
 
-      {/* Budget Item Warning */}
-      {!project.meta?.['بند الميزانية'] && (
-        <div className="bg-warning/10 border-l-4 border-l-warning p-4 rounded-lg">
-          <div className="flex items-center">
-            <AlertTriangle className="h-5 w-5 text-warning mr-2" />
-            <div>
-              <h3 className="font-medium text-warning">Budget Item Required</h3>
-              <p className="text-sm text-muted-foreground">
-                Set a budget item in project metadata to enable inventory allocation based on batch numbers.
-              </p>
+          {/* Budget Item Warning */}
+          {!project.meta?.['بند الميزانية'] && (
+            <div className="bg-warning/10 border-l-4 border-l-warning p-4 rounded-lg">
+              <div className="flex items-center">
+                <AlertTriangle className="h-5 w-5 text-warning mr-2" />
+                <div>
+                  <h3 className="font-medium text-warning">Budget Item Required</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Set a budget item in project metadata to enable inventory allocation based on batch numbers.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Toolbar */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Button onClick={addRequirement} size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Row
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowMissingOnly(!showMissingOnly)}
+                className={showMissingOnly ? 'bg-primary/10' : ''}
+              >
+                <Filter className="h-4 w-4 mr-2" />
+                {showMissingOnly ? 'Show All' : 'Only Missing > 0'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAutoAllocation}
+                disabled={!project?.meta?.['بند الميزانية'] || requirements.filter(r => !r.exclude_from_allocation).length === 0}
+              >
+                <Zap className="h-4 w-4 mr-2" />
+                Auto Allocate
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportToCSV}
+                disabled={filteredRequirements.length === 0}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowImportModal(true)}
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Import XLSX
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportTemplate}
+              >
+                <FileDown className="h-4 w-4 mr-2" />
+                Download Template
+              </Button>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {filteredRequirements.length} requirement(s) • Budget Item: <span className="font-medium">{project.meta?.['بند الميزانية'] || 'Not set'}</span>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Toolbar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <Button onClick={addRequirement} size="sm">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Row
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => setShowMissingOnly(!showMissingOnly)}
-            className={showMissingOnly ? 'bg-primary/10' : ''}
-          >
-            <Filter className="h-4 w-4 mr-2" />
-            {showMissingOnly ? 'Show All' : 'Only Missing > 0'}
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={handleAutoAllocation}
-            disabled={!project?.meta?.['بند الميزانية'] || requirements.filter(r => !r.exclude_from_allocation).length === 0}
-          >
-            <Zap className="h-4 w-4 mr-2" />
-            Auto Allocate
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={exportToCSV}
-            disabled={filteredRequirements.length === 0}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Export CSV
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => setShowImportModal(true)}
-          >
-            <Upload className="h-4 w-4 mr-2" />
-            Import XLSX
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={handleExportTemplate}
-          >
-            <FileDown className="h-4 w-4 mr-2" />
-            Download Template
-          </Button>
-        </div>
-        <div className="text-sm text-muted-foreground">
-          {filteredRequirements.length} requirement(s) • Budget Item: <span className="font-medium">{project.meta?.['بند الميزانية'] || 'Not set'}</span>
-        </div>
-      </div>
-
-      {/* Requirements Table */}
-      <div className="border rounded-lg">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[80px]">Complete/Exclude</TableHead>
-              <TableHead>Item Code</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Available Batch</TableHead>
-              <TableHead>Other Batches</TableHead>
-              <TableHead>Required Qty</TableHead>
-              <TableHead>Withdrawn Qty</TableHead>
-              <TableHead>Allocatable Qty</TableHead>
-              <TableHead>Missing Qty</TableHead>
-              <TableHead>Notes</TableHead>
-              <TableHead className="w-[100px]">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredRequirements.map((req) => {
-              const computed = getComputedValues(req.item_code);
-              const isExcluded = req.exclude_from_allocation;
-              const hasMissingQty = !isExcluded && computed.missing_qty > 0;
-              
-              return (
-                <TableRow 
-                  key={req.id} 
-                  className={`${isExcluded ? 'opacity-60 bg-muted/50' : ''} ${hasMissingQty ? 'bg-destructive/10 border-l-4 border-l-destructive' : ''}`}
-                >
-                  <TableCell>
-                    <Checkbox
-                      checked={isExcluded || false}
-                      onCheckedChange={(checked) => updateRequirement(req, 'exclude_from_allocation', checked)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <SearchableCombobox
-                      options={getInventoryOptions()}
-                      value={req.item_code}
-                      onValueChange={(value) => handleItemCodeSelect(value, req)}
-                      placeholder="Select item code..."
-                      emptyText="No items found in active inventory."
-                      className="border-none p-1 h-auto min-w-[200px]"
-                      disabled={isExcluded}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm text-foreground min-w-[200px] p-1">
-                      {(() => {
-                        // First try materials table
-                        const material = materials.find(m => m.item_code === req.item_code);
-                        let description = material?.description || material?.name || '';
-                        
-                        // If no description in materials, check inventory notes
-                        if (!description && req.item_code) {
-                          const inventoryItem = inventory.find(inv => inv.item_code === req.item_code);
-                          description = inventoryItem?.notes || '';
-                        }
-                        
-                        return description || (req.item_code ? 'No description available' : 'Select an item code first');
-                      })()}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {(() => {
-                      const projectBudgetItem = project?.meta?.['بند الميزانية'];
-                      const matchingInventory = inventory.filter(inv => 
-                        inv.item_code === req.item_code && inv.batch_number === projectBudgetItem
-                      );
-                      const totalAvailable = matchingInventory.reduce((sum, inv) => sum + inv.current_balance, 0);
-                      
-                      return (
-                        <div className="text-sm">
-                          {projectBudgetItem ? (
-                            <div>
-                              <div className="font-medium">{projectBudgetItem}</div>
-                              <div className="text-xs text-muted-foreground">
-                                Available: {totalAvailable}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="text-xs text-muted-foreground">No budget item set</div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </TableCell>
-                  <TableCell>
-                    {(() => {
-                      const otherBatchesQty = otherBatchesQuantities[req.item_code] || 0;
-                      
-                      if (!req.item_code || otherBatchesQty === 0) {
-                        return <div className="text-xs text-muted-foreground">-</div>;
-                      }
-
-                      return (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleShowOtherBatches(req.item_code)}
-                          className="h-7 px-2 text-xs"
-                          disabled={isExcluded}
-                        >
-                          Check ({otherBatchesQty})
-                        </Button>
-                      );
-                    })()}
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      value={req.required_qty}
-                      onChange={(e) => updateRequirement(req, 'required_qty', Number(e.target.value))}
-                      className="border-none p-1 h-8 w-20"
-                      disabled={isExcluded}
-                      min="0"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      value={req.withdrawn_qty}
-                      onChange={(e) => updateRequirement(req, 'withdrawn_qty', Number(e.target.value))}
-                      className="border-none p-1 h-8 w-20"
-                      disabled={isExcluded}
-                      min="0"
-                      max={req.required_qty}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={isExcluded ? 'outline' : 'secondary'}>
-                      {isExcluded ? 'Excluded' : computed.allocatable_qty}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge 
-                      variant={isExcluded ? 'outline' : (computed.missing_qty > 0 ? 'destructive' : 'default')}
-                    >
-                      {isExcluded ? 'Excluded' : computed.missing_qty}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      value={req.notes || ''}
-                      onChange={(e) => updateRequirement(req, 'notes', e.target.value)}
-                      className="border-none p-1 h-8"
-                      placeholder="Add notes..."
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteRequirement(req.id)}
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
+          {/* Requirements Table */}
+          <div className="border rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[80px]">Complete/Exclude</TableHead>
+                  <TableHead>Item Code</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Available Batch</TableHead>
+                  <TableHead>Other Batches</TableHead>
+                  <TableHead>Required Qty</TableHead>
+                  <TableHead>Withdrawn Qty</TableHead>
+                  <TableHead>Allocatable Qty</TableHead>
+                  <TableHead>Missing Qty</TableHead>
+                  <TableHead>Notes</TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
-              );
-            })}
-            {filteredRequirements.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                  {showMissingOnly ? 'No requirements with missing quantities' : 'No requirements found'}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              </TableHeader>
+              <TableBody>
+                {filteredRequirements.map((req) => {
+                  const computed = getComputedValues(req.item_code);
+                  const isExcluded = req.exclude_from_allocation;
+                  const hasMissingQty = !isExcluded && computed.missing_qty > 0;
 
-      {/* Import Modal */}
-      <ImportProjectModal
-        isOpen={showImportModal}
-        onClose={() => setShowImportModal(false)}
-        onImport={handleImportProject}
-        projectId={project.project_id}
-      />
+                  return (
+                    <TableRow
+                      key={req.id}
+                      className={`${isExcluded ? 'opacity-60 bg-muted/50' : ''} ${hasMissingQty ? 'bg-destructive/10 border-l-4 border-l-destructive' : ''}`}
+                    >
+                      <TableCell>
+                        <Checkbox
+                          checked={isExcluded || false}
+                          onCheckedChange={(checked) => updateRequirement(req, 'exclude_from_allocation', checked)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <SearchableCombobox
+                          options={getInventoryOptions()}
+                          value={req.item_code}
+                          onValueChange={(value) => handleItemCodeSelect(value, req)}
+                          placeholder="Select item code..."
+                          emptyText="No items found in active inventory."
+                          className="border-none p-1 h-auto min-w-[200px]"
+                          disabled={isExcluded}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm text-foreground min-w-[200px] p-1">
+                          {(() => {
+                            // First try materials table
+                            const material = materials.find(m => m.item_code === req.item_code);
+                            let description = material?.description || material?.name || '';
 
-      {/* Other Batches Dialog */}
-      <OtherBatchesDialog
-        isOpen={showOtherBatchesModal}
-        onClose={() => setShowOtherBatchesModal(false)}
-        itemCode={selectedItemForBatches?.itemCode || ''}
-        otherBatches={selectedItemForBatches?.otherBatches || []}
-      />
+                            // If no description in materials, check inventory notes
+                            if (!description && req.item_code) {
+                              const inventoryItem = inventory.find(inv => inv.item_code === req.item_code);
+                              description = inventoryItem?.notes || '';
+                            }
 
-      {/* Auto Allocation Dialog */}
-      <AutoAllocationDialog
-        isOpen={showAutoAllocationModal}
-        onClose={() => setShowAutoAllocationModal(false)}
-        onConfirm={handleConfirmAutoAllocation}
-        allocations={allocationPreviews}
-        projectName={project.name}
-      />
+                            return description || (req.item_code ? 'No description available' : 'Select an item code first');
+                          })()}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const projectBudgetItem = project?.meta?.['بند الميزانية'];
+                          const matchingInventory = inventory.filter(inv =>
+                            inv.item_code === req.item_code && inv.batch_number === projectBudgetItem
+                          );
+                          const totalAvailable = matchingInventory.reduce((sum, inv) => sum + inv.current_balance, 0);
+
+                          return (
+                            <div className="text-sm">
+                              {projectBudgetItem ? (
+                                <div>
+                                  <div className="font-medium">{projectBudgetItem}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Available: {totalAvailable}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted-foreground">No budget item set</div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const otherBatchesQty = otherBatchesQuantities[req.item_code] || 0;
+
+                          if (!req.item_code || otherBatchesQty === 0) {
+                            return <div className="text-xs text-muted-foreground">-</div>;
+                          }
+
+                          return (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleShowOtherBatches(req.item_code)}
+                              className="h-7 px-2 text-xs"
+                              disabled={isExcluded}
+                            >
+                              Check ({otherBatchesQty})
+                            </Button>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          value={req.required_qty}
+                          onChange={(e) => updateRequirement(req, 'required_qty', Number(e.target.value))}
+                          className="border-none p-1 h-8 w-20"
+                          disabled={isExcluded}
+                          min="0"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          value={req.withdrawn_qty}
+                          onChange={(e) => updateRequirement(req, 'withdrawn_qty', Number(e.target.value))}
+                          className="border-none p-1 h-8 w-20"
+                          disabled={isExcluded}
+                          min="0"
+                          max={req.required_qty}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={isExcluded ? 'outline' : 'secondary'}>
+                          {isExcluded ? 'Excluded' : computed.allocatable_qty}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={isExcluded ? 'outline' : (computed.missing_qty > 0 ? 'destructive' : 'default')}
+                        >
+                          {isExcluded ? 'Excluded' : computed.missing_qty}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          value={req.notes || ''}
+                          onChange={(e) => updateRequirement(req, 'notes', e.target.value)}
+                          className="border-none p-1 h-8"
+                          placeholder="Add notes..."
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteRequirement(req.id)}
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {filteredRequirements.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                      {showMissingOnly ? 'No requirements with missing quantities' : 'No requirements found'}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Import Modal */}
+          <ImportProjectModal
+            isOpen={showImportModal}
+            onClose={() => setShowImportModal(false)}
+            onImport={handleImportProject}
+            projectId={project.project_id}
+          />
+
+          {/* Other Batches Dialog */}
+          <OtherBatchesDialog
+            isOpen={showOtherBatchesModal}
+            onClose={() => setShowOtherBatchesModal(false)}
+            itemCode={selectedItemForBatches?.itemCode || ''}
+            otherBatches={selectedItemForBatches?.otherBatches || []}
+          />
+
+          {/* Auto Allocation Dialog */}
+          <AutoAllocationDialog
+            isOpen={showAutoAllocationModal}
+            onClose={() => setShowAutoAllocationModal(false)}
+            onConfirm={handleConfirmAutoAllocation}
+            allocations={allocationPreviews}
+            projectName={project.name}
+          />
         </>
       )}
     </div>
